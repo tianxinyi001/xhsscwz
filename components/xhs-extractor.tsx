@@ -536,6 +536,38 @@ export default function XHSExtractor() {
     }
   };
 
+  // 播放删除音效
+  const playDeleteSound = () => {
+    try {
+      // 使用Web Audio API生成删除音效
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      // 创建振荡器
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      // 连接节点
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      // 设置音频参数 - 删除音效用较低的频率
+      oscillator.frequency.setValueAtTime(400, audioContext.currentTime); // 频率 400Hz（较低）
+      oscillator.type = 'sine'; // 正弦波
+      
+      // 设置音量包络（快速衰减）
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+      
+      // 播放音频
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.15);
+      
+    } catch (error) {
+      console.log('无法播放删除音效:', error);
+    }
+  };
+
   const handleExtract = async () => {
     if (!url.trim()) {
       setError('请输入小红书链接');
@@ -656,6 +688,9 @@ export default function XHSExtractor() {
     if (deletingNote) {
       StorageManager.deleteNote(deletingNote.id);
       setSavedNotes(prev => prev.filter(note => note.id !== deletingNote.id));
+      
+      // 播放提示音
+      playDeleteSound();
     }
     setShowDeleteModal(false);
     setDeletingNote(null);
@@ -716,6 +751,9 @@ export default function XHSExtractor() {
     setAllTags([]);
     setFilterTag(null);
     setShowClearAllModal(false);
+    
+    // 播放删除音效
+    playDeleteSound();
   };
 
   // 取消清空
