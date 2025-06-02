@@ -564,6 +564,8 @@ export default function XHSExtractor() {
       const extractedUrl = extractXHSUrl(url);
       console.log('用户输入:', url);
       console.log('提取的URL:', extractedUrl);
+      console.log('提取的URL类型:', typeof extractedUrl);
+      console.log('提取的URL长度:', extractedUrl?.length);
 
       const response = await fetch('/api/extract', {
         method: 'POST',
@@ -587,6 +589,8 @@ export default function XHSExtractor() {
       const finalUrl = extractedUrl;
       
       console.log('最终使用的URL:', finalUrl);
+      console.log('最终URL类型:', typeof finalUrl);
+      console.log('最终URL长度:', finalUrl?.length);
       
       // 构造简化的笔记对象
       const simpleNote: SimpleNote = {
@@ -599,6 +603,8 @@ export default function XHSExtractor() {
       };
       
       console.log('保存的笔记对象:', simpleNote);
+      console.log('保存的笔记URL:', simpleNote.url);
+      console.log('保存的笔记URL类型:', typeof simpleNote.url);
 
       // 保存到本地存储（保持兼容性）
       const fullNote: StoredNote = {
@@ -719,10 +725,17 @@ export default function XHSExtractor() {
 
   const openNote = (noteUrl: string) => {
     console.log('点击卡片，准备打开URL:', noteUrl);
-    if (noteUrl && noteUrl.startsWith('https://')) {
+    console.log('URL类型:', typeof noteUrl);
+    console.log('URL长度:', noteUrl?.length);
+    console.log('URL是否以http开头:', noteUrl?.startsWith('http://'));
+    console.log('URL是否以https开头:', noteUrl?.startsWith('https://'));
+    
+    if (noteUrl && (noteUrl.startsWith('https://') || noteUrl.startsWith('http://'))) {
+      console.log('URL验证通过，即将打开');
       window.open(noteUrl, '_blank');
     } else {
       console.error('无效的URL:', noteUrl);
+      console.error('URL验证失败的原因: URL为空或不以http/https开头');
     }
   };
 

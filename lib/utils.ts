@@ -51,7 +51,8 @@ export function isValidXHSUrl(url: string): boolean {
     'xhscdn',
     '小红书',
     'xhs',
-    'redbook'
+    'redbook',
+    'xhslink'
   ];
   
   const lowerUrl = trimmedUrl.toLowerCase();
@@ -65,7 +66,8 @@ export function isValidXHSUrl(url: string): boolean {
   try {
     const urlObj = new URL(trimmedUrl);
     if (urlObj.hostname.includes('xiaohongshu.com') || 
-        urlObj.hostname.includes('xhscdn.com')) {
+        urlObj.hostname.includes('xhscdn.com') ||
+        urlObj.hostname.includes('xhslink.com')) {
       return true;
     }
   } catch {
@@ -95,8 +97,8 @@ export function extractXHSUrl(input: string): string {
   // 移除多余的空白字符
   const cleanInput = input.trim();
   
-  // 使用正则表达式匹配小红书URL
-  const urlPattern = /https:\/\/www\.xiaohongshu\.com\/discovery\/item\/[a-zA-Z0-9]+(\?[^\s]*)?/;
+  // 使用正则表达式匹配小红书URL - 同时支持http和https
+  const urlPattern = /https?:\/\/(?:www\.)?(?:xiaohongshu\.com\/discovery\/item\/[a-zA-Z0-9]+|xhslink\.com\/[a-zA-Z0-9\/]+)(\?[^\s]*)?/;
   const match = cleanInput.match(urlPattern);
   
   if (match) {
