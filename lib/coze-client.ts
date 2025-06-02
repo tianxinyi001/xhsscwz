@@ -174,9 +174,16 @@ export class CozeClient {
               ...toolData.output,
               // 确保有基本字段
               title: toolData.output.title || '未提取到标题',
-              cover: toolData.output.imageList?.[0]?.urlPre || 
-                     toolData.output.imageList?.[0]?.urlDefault || 
-                     '无封面',
+              cover: (() => {
+                let cover = toolData.output.imageList?.[0]?.urlPre || 
+                           toolData.output.imageList?.[0]?.urlDefault || 
+                           '无封面';
+                // 将HTTP链接转换为HTTPS
+                if (cover && typeof cover === 'string' && cover.startsWith('http://')) {
+                  cover = cover.replace('http://', 'https://');
+                }
+                return cover;
+              })(),
               tags: toolData.output.tagList?.map((tag: any) => tag.name) || [],
               author: toolData.output.user?.nickname || '未知作者'
             });

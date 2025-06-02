@@ -577,6 +577,25 @@ export default function XHSExtractor() {
     ? savedNotes.filter(note => note.tags.includes(filterTag))
     : savedNotes;
 
+  // 处理图片URL，使用代理来绕过防盗链
+  const getProxyImageUrl = (originalUrl: string): string => {
+    if (!originalUrl || originalUrl === '无封面') {
+      return '';
+    }
+    
+    // 如果已经是代理URL，直接返回
+    if (originalUrl.startsWith('/api/image-proxy')) {
+      return originalUrl;
+    }
+    
+    // 如果是小红书CDN链接，使用代理
+    if (originalUrl.includes('xhscdn.com')) {
+      return `/api/image-proxy?url=${encodeURIComponent(originalUrl)}`;
+    }
+    
+    return originalUrl;
+  };
+
   // 渲染小红书风格的简化笔记卡片
   const renderNoteCard = (note: SimpleNote) => {
     return (
@@ -589,7 +608,7 @@ export default function XHSExtractor() {
         <div className="relative overflow-hidden">
           {note.cover ? (
             <img
-              src={note.cover}
+              src={getProxyImageUrl(note.cover)}
               alt={note.title}
               className="cover-image"
               onError={(e) => {

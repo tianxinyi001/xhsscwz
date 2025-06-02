@@ -42,6 +42,11 @@ export async function POST(request: NextRequest) {
         coverUrl = coverUrl.replace('http://', 'https://');
       }
       
+      // 如果是小红书CDN链接，转换为代理URL
+      if (coverUrl && coverUrl !== '无封面' && coverUrl.includes('xhscdn.com')) {
+        coverUrl = `/api/image-proxy?url=${encodeURIComponent(coverUrl)}`;
+      }
+      
       const quickData = {
         title: dataSource.title || parsedData.title || '未提取到标题',
         cover: coverUrl,
@@ -69,14 +74,23 @@ export async function POST(request: NextRequest) {
         if (cover && typeof cover === 'string' && cover.startsWith('http://')) {
           cover = cover.replace('http://', 'https://');
         }
+        // 如果是小红书CDN链接，转换为代理URL
+        if (cover && cover.includes('xhscdn.com')) {
+          cover = `/api/image-proxy?url=${encodeURIComponent(cover)}`;
+        }
         return cover;
       })(),
       images: (() => {
         const images = dataSource.images || (dataSource.imageList?.map((img: any) => img.urlDefault || img.url) || []);
-        // 将所有图片链接转换为HTTPS
+        // 将所有图片链接转换为HTTPS并使用代理
         return images.map((img: string) => {
-          if (img && typeof img === 'string' && img.startsWith('http://')) {
-            return img.replace('http://', 'https://');
+          if (img && typeof img === 'string') {
+            if (img.startsWith('http://')) {
+              img = img.replace('http://', 'https://');
+            }
+            if (img.includes('xhscdn.com')) {
+              img = `/api/image-proxy?url=${encodeURIComponent(img)}`;
+            }
           }
           return img;
         });
