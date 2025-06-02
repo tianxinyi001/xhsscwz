@@ -31,12 +31,20 @@ export async function POST(request: NextRequest) {
         dataSource: dataSource
       });
       
+      // 处理封面链接，确保使用HTTPS
+      let coverUrl = dataSource.cover || 
+                    (dataSource.imageList && dataSource.imageList[0]?.urlPre) ||
+                    (dataSource.imageList && dataSource.imageList[0]?.urlDefault) ||
+                    '无封面';
+      
+      // 将HTTP链接转换为HTTPS
+      if (coverUrl && typeof coverUrl === 'string' && coverUrl.startsWith('http://')) {
+        coverUrl = coverUrl.replace('http://', 'https://');
+      }
+      
       const quickData = {
         title: dataSource.title || parsedData.title || '未提取到标题',
-        cover: dataSource.cover || 
-               (dataSource.imageList && dataSource.imageList[0]?.urlPre) ||
-               (dataSource.imageList && dataSource.imageList[0]?.urlDefault) ||
-               '无封面',
+        cover: coverUrl,
         noteId: noteId,
         url: url
       };
@@ -53,14 +61,27 @@ export async function POST(request: NextRequest) {
     // 完整模式：返回所有信息（保持兼容性）
     const normalizedData = {
       title: dataSource.title || parsedData.title || '未提取到标题',
-      author: dataSource.user?.nickname || dataSource.author || '未知作者',
-      content: dataSource.desc || dataSource.content || '无内容',
-      cover: dataSource.cover || 
-             (dataSource.imageList && dataSource.imageList[0]?.urlPre) ||
-             (dataSource.imageList && dataSource.imageList[0]?.urlDefault) ||
-             '无封面',
-      images: dataSource.imageList?.map((img: any) => img.urlDefault || img.urlPre || img.url) || [],
-      tags: dataSource.tagList?.map((tag: any) => tag.name) || [],
+      author: dataSource.author || '未知作者',
+      content: dataSource.content || dataSource.desc || '无内容',
+      cover: (() => {
+        let cover = dataSource.cover || (dataSource.imageList && dataSource.imageList[0]?.urlDefault);
+        // 将HTTP链接转换为HTTPS
+        if (cover && typeof cover === 'string' && cover.startsWith('http://')) {
+          cover = cover.replace('http://', 'https://');
+        }
+        return cover;
+      })(),
+      images: (() => {
+        const images = dataSource.images || (dataSource.imageList?.map((img: any) => img.urlDefault || img.url) || []);
+        // 将所有图片链接转换为HTTPS
+        return images.map((img: string) => {
+          if (img && typeof img === 'string' && img.startsWith('http://')) {
+            return img.replace('http://', 'https://');
+          }
+          return img;
+        });
+      })(),
+      tags: dataSource.tags || [],
       noteId: dataSource.noteId || parsedData.noteId,
       stats: {
         likes: dataSource.interactInfo?.likedCount || 0,

@@ -592,12 +592,29 @@ export default function XHSExtractor() {
               src={note.cover}
               alt={note.title}
               className="cover-image"
+              onError={(e) => {
+                // 图片加载失败时显示占位符
+                console.error('图片加载失败:', note.cover);
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                const placeholder = target.nextElementSibling as HTMLElement;
+                if (placeholder) {
+                  placeholder.style.display = 'flex';
+                }
+              }}
+              onLoad={() => {
+                console.log('图片加载成功:', note.cover);
+              }}
             />
-          ) : (
-            <div className="aspect-[3/4] w-full bg-gray-100 flex items-center justify-center">
-              <span className="text-gray-400 text-sm">暂无封面</span>
-            </div>
-          )}
+          ) : null}
+          
+          {/* 图片加载失败或无封面时的占位符 */}
+          <div 
+            className="aspect-[3/4] w-full bg-gray-100 flex items-center justify-center"
+            style={{ display: note.cover ? 'none' : 'flex' }}
+          >
+            <span className="text-gray-400 text-sm">暂无封面</span>
+          </div>
           
           {/* 删除按钮 */}
           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
