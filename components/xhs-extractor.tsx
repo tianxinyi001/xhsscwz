@@ -349,6 +349,112 @@ function TagEditModal({
   );
 }
 
+// 删除确认弹窗组件
+function DeleteConfirmModal({ 
+  isOpen, 
+  onClose, 
+  onConfirm, 
+  noteTitle 
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  noteTitle: string;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4">
+        <div className="text-center">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Trash2 className="h-6 w-6 text-red-500" />
+          </div>
+          
+          <h3 className="text-lg font-semibold text-gray-800 mb-2">确认删除</h3>
+          
+          <div className="text-sm text-gray-600 mb-4">
+            <p className="mb-2">您确定要删除这篇笔记吗？</p>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="font-medium text-gray-800 line-clamp-2">{noteTitle}</p>
+            </div>
+            <p className="mt-2 text-red-500">此操作无法撤销</p>
+          </div>
+
+          <div className="flex gap-3">
+            <Button 
+              variant="ghost" 
+              onClick={onClose} 
+              className="flex-1"
+            >
+              取消
+            </Button>
+            <Button 
+              onClick={onConfirm} 
+              className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+            >
+              确认删除
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 清空确认弹窗组件
+function ClearAllConfirmModal({ 
+  isOpen, 
+  onClose, 
+  onConfirm, 
+  notesCount 
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  notesCount: number;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4">
+        <div className="text-center">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Trash2 className="h-6 w-6 text-red-500" />
+          </div>
+          
+          <h3 className="text-lg font-semibold text-gray-800 mb-2">确认清空收藏</h3>
+          
+          <div className="text-sm text-gray-600 mb-4">
+            <p className="mb-2">您确定要清空所有收藏的笔记吗？</p>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="font-medium text-gray-800">共 {notesCount} 篇笔记</p>
+            </div>
+            <p className="mt-2 text-red-500">此操作无法撤销</p>
+          </div>
+
+          <div className="flex gap-3">
+            <Button 
+              variant="ghost" 
+              onClick={onClose} 
+              className="flex-1"
+            >
+              取消
+            </Button>
+            <Button 
+              onClick={onConfirm} 
+              className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+            >
+              确认清空
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function XHSExtractor() {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -366,6 +472,13 @@ export default function XHSExtractor() {
   // 标签编辑状态
   const [showTagEditModal, setShowTagEditModal] = useState(false);
   const [editingNote, setEditingNote] = useState<SimpleNote | null>(null);
+
+  // 删除确认状态
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingNote, setDeletingNote] = useState<SimpleNote | null>(null);
+
+  // 清空确认状态
+  const [showClearAllModal, setShowClearAllModal] = useState(false);
 
   // 在客户端初始化时加载数据
   useEffect(() => {
@@ -526,6 +639,28 @@ export default function XHSExtractor() {
     setSavedNotes(prev => prev.filter(note => note.id !== id));
   };
 
+  // 显示删除确认弹窗
+  const handleShowDeleteConfirm = (note: SimpleNote) => {
+    setDeletingNote(note);
+    setShowDeleteModal(true);
+  };
+
+  // 确认删除
+  const handleConfirmDelete = () => {
+    if (deletingNote) {
+      StorageManager.deleteNote(deletingNote.id);
+      setSavedNotes(prev => prev.filter(note => note.id !== deletingNote.id));
+    }
+    setShowDeleteModal(false);
+    setDeletingNote(null);
+  };
+
+  // 取消删除
+  const handleCancelDelete = () => {
+    setShowDeleteModal(false);
+    setDeletingNote(null);
+  };
+
   // 打开标签编辑弹窗
   const handleEditTags = (note: SimpleNote) => {
     setEditingNote(note);
@@ -561,6 +696,25 @@ export default function XHSExtractor() {
   const handleClearAll = () => {
     StorageManager.clearAllNotes();
     setSavedNotes([]);
+  };
+
+  // 显示清空确认弹窗
+  const handleShowClearAllConfirm = () => {
+    setShowClearAllModal(true);
+  };
+
+  // 确认清空
+  const handleConfirmClearAll = () => {
+    StorageManager.clearAllNotes();
+    setSavedNotes([]);
+    setAllTags([]);
+    setFilterTag(null);
+    setShowClearAllModal(false);
+  };
+
+  // 取消清空
+  const handleCancelClearAll = () => {
+    setShowClearAllModal(false);
   };
 
   const openNote = (noteUrl: string) => {
@@ -642,7 +796,7 @@ export default function XHSExtractor() {
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
-                handleDeleteNote(note.id);
+                handleShowDeleteConfirm(note);
               }}
               className="h-7 w-7 p-0 bg-black/20 hover:bg-black/40 text-white rounded-full"
             >
@@ -712,7 +866,7 @@ export default function XHSExtractor() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleClearAll}
+                onClick={handleShowClearAllConfirm}
                 className="text-gray-500 hover:text-red-500"
               >
                 <Trash2 className="h-4 w-4 mr-1" />
@@ -843,6 +997,22 @@ export default function XHSExtractor() {
         note={editingNote}
         allTags={allTags}
         onCreateTag={handleCreateTag}
+      />
+
+      {/* 删除确认弹窗 */}
+      <DeleteConfirmModal
+        isOpen={showDeleteModal}
+        onClose={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        noteTitle={deletingNote?.title || ''}
+      />
+
+      {/* 清空确认弹窗 */}
+      <ClearAllConfirmModal
+        isOpen={showClearAllModal}
+        onClose={handleCancelClearAll}
+        onConfirm={handleConfirmClearAll}
+        notesCount={savedNotes.length}
       />
     </div>
   );
