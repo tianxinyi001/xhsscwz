@@ -458,6 +458,7 @@ function ClearAllConfirmModal({
 export default function XHSExtractor() {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState(''); // 新增：加载阶段状态
   const [savedNotes, setSavedNotes] = useState<SimpleNote[]>([]);
   const [error, setError] = useState<string | null>(null);
   
@@ -588,6 +589,7 @@ export default function XHSExtractor() {
   // 确认收藏笔记 - 在用户选择标签后执行提取
   const handleConfirmSave = async (selectedTags: string[]) => {
     setIsLoading(true);
+    setLoadingStage('正在解析链接...');
     setError(null);
     setShowTagModal(false);
 
@@ -599,6 +601,8 @@ export default function XHSExtractor() {
       console.log('提取的URL类型:', typeof extractedUrl);
       console.log('提取的URL长度:', extractedUrl?.length);
 
+      setLoadingStage('正在获取笔记信息...');
+
       const response = await fetch('/api/extract', {
         method: 'POST',
         headers: {
@@ -606,6 +610,8 @@ export default function XHSExtractor() {
         },
         body: JSON.stringify({ url: extractedUrl, quickPreview: true }),
       });
+
+      setLoadingStage('正在处理数据...');
 
       const result: ApiResponse = await response.json();
 
@@ -616,6 +622,8 @@ export default function XHSExtractor() {
       console.log('API完整响应:', result);
       const parsedData = result.data;
       console.log('解析的数据:', parsedData);
+      
+      setLoadingStage('正在保存笔记...');
       
       // 使用提取的正确URL
       const finalUrl = extractedUrl;
@@ -653,6 +661,8 @@ export default function XHSExtractor() {
 
       StorageManager.saveNote(fullNote);
       
+      setLoadingStage('收藏成功！');
+      
       // 更新状态
       setSavedNotes(prev => [simpleNote, ...prev]);
       
@@ -663,12 +673,16 @@ export default function XHSExtractor() {
       // 播放提示音
       playNotificationSound();
       
+      // 延迟一点时间显示成功状态
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : '提取失败，请稍后重试');
       // 重新显示标签弹窗，让用户可以重试
       setShowTagModal(true);
     } finally {
       setIsLoading(false);
+      setLoadingStage('');
     }
   };
 
@@ -902,6 +916,27 @@ export default function XHSExtractor() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* 全局加载进度条 */}
+      {isLoading && (
+        <div className="fixed top-0 left-0 right-0 z-50">
+          <div className="bg-gradient-to-r from-red-400 to-pink-400 h-1 relative overflow-hidden">
+            <div className="absolute inset-0 bg-white/30" 
+                 style={{ 
+                   animation: 'loading-progress 2s ease-in-out infinite' 
+                 }}>
+            </div>
+          </div>
+          <div className="bg-white/95 backdrop-blur-sm shadow-sm border-b border-gray-100">
+            <div className="container mx-auto px-4 py-3">
+              <div className="flex items-center justify-center gap-3 text-sm text-gray-700">
+                <div className="animate-spin h-4 w-4 border-2 border-red-500 border-t-transparent rounded-full"></div>
+                <span className="font-medium">{loadingStage || '正在处理...'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 顶部导航栏 */}
       <div className="bg-white shadow-sm border-b border-gray-100">
         <div className="container mx-auto px-4 py-4">
@@ -940,7 +975,7 @@ export default function XHSExtractor() {
                   placeholder="🔗 粘贴小红书链接，快速收藏笔记..."
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-red-300 focus:ring-red-100"
+                  className={`flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-red-300 focus:ring-red-100 transition-all duration-200 ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:border-gray-300'}`}
                   disabled={isLoading}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !isLoading && url.trim()) {
@@ -952,10 +987,23 @@ export default function XHSExtractor() {
                 <Button 
                   onClick={handleExtract}
                   disabled={isLoading || !url.trim()}
-                  className="bg-gradient-to-r from-red-400 to-pink-400 hover:from-red-500 hover:to-pink-500 text-white rounded-xl px-6 py-3"
+                  className={`bg-gradient-to-r from-red-400 to-pink-400 hover:from-red-500 hover:to-pink-500 text-white rounded-xl px-6 py-3 transition-all duration-200 relative ${isLoading ? 'collecting-btn' : ''}`}
                 >
-                  <Plus className="h-4 w-4 mr-1" />
-                  {isLoading ? '收藏中...' : '收藏笔记'}
+                  {isLoading ? (
+                    <>
+                      {loadingStage === '收藏成功！' ? (
+                        <div className="h-4 w-4 mr-2 text-green-300 success-checkmark">✓</div>
+                      ) : (
+                        <div className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full"></div>
+                      )}
+                      <span className="animate-pulse">{loadingStage || '收藏中...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4 mr-1 transition-transform group-hover:scale-110" />
+                      收藏笔记
+                    </>
+                  )}
                 </Button>
               </div>
               
