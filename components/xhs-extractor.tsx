@@ -987,23 +987,10 @@ export default function XHSExtractor() {
                 <Button 
                   onClick={handleExtract}
                   disabled={isLoading || !url.trim()}
-                  className={`bg-gradient-to-r from-red-400 to-pink-400 hover:from-red-500 hover:to-pink-500 text-white rounded-xl px-6 py-3 transition-all duration-200 relative ${isLoading ? 'collecting-btn' : ''}`}
+                  className="bg-gradient-to-r from-red-400 to-pink-400 hover:from-red-500 hover:to-pink-500 text-white rounded-xl px-6 py-3 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {isLoading ? (
-                    <>
-                      {loadingStage === '收藏成功！' ? (
-                        <div className="h-4 w-4 mr-2 text-green-300 success-checkmark">✓</div>
-                      ) : (
-                        <div className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full"></div>
-                      )}
-                      <span className="animate-pulse">{loadingStage || '收藏中...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4 mr-1 transition-transform group-hover:scale-110" />
-                      收藏笔记
-                    </>
-                  )}
+                  <Plus className="h-4 w-4 mr-1" />
+                  收藏笔记
                 </Button>
               </div>
               
