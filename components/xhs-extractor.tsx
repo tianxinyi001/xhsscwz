@@ -939,16 +939,18 @@ export default function XHSExtractor() {
 
       {/* 顶部导航栏 */}
       <div className="bg-white shadow-sm border-b border-gray-100">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-r from-red-400 to-pink-400 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">小</span>
-              </div>
-              <h1 className="text-xl font-bold text-gray-800">小红书笔记收藏</h1>
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-9 h-9 bg-gradient-to-r from-red-400 to-pink-400 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-base">红</span>
             </div>
-            
-            {savedNotes.length > 0 && (
+            <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">红书对标库</h1>
+          </div>
+          <div className="ml-12 mt-1">
+            <span className="text-xs text-gray-400 font-normal tracking-wide leading-tight">发现红书爆款，收藏你的专属灵感</span>
+          </div>
+          {savedNotes.length > 0 && (
+            <div className="absolute top-6 right-8">
               <Button
                 variant="ghost"
                 size="sm"
@@ -958,8 +960,8 @@ export default function XHSExtractor() {
                 <Trash2 className="h-4 w-4 mr-1" />
                 清空收藏
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
