@@ -824,12 +824,12 @@ export default function XHSExtractor() {
         onClick={() => openNote(note.url)}
       >
         {/* 封面图片 */}
-        <div className="relative overflow-hidden">
+        <div className="relative overflow-hidden aspect-[3/4] w-full bg-gray-100 flex items-center justify-center">
           {note.cover ? (
             <img
               src={getProxyImageUrl(note.cover)}
               alt={note.title}
-              className="cover-image"
+              className="max-w-full max-h-full object-contain mx-auto"
               onError={(e) => {
                 // 图片加载失败时显示占位符
                 console.error('图片加载失败:', note.cover);
@@ -845,10 +845,9 @@ export default function XHSExtractor() {
               }}
             />
           ) : null}
-          
           {/* 图片加载失败或无封面时的占位符 */}
           <div 
-            className="aspect-[3/4] w-full bg-gray-100 flex items-center justify-center"
+            className="absolute inset-0 flex items-center justify-center"
             style={{ display: note.cover ? 'none' : 'flex' }}
           >
             <span className="text-gray-400 text-sm">暂无封面</span>
