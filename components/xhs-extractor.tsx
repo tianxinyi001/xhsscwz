@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { StorageManager } from '@/lib/storage';
 import { StoredNote } from '@/lib/types';
 import { generateId, isValidXHSUrl, extractXHSUrl } from '@/lib/utils';
-import { Trash2, ExternalLink, Plus, Tag, X } from 'lucide-react';
+import { Trash2, ExternalLink, Plus, Tag, X, Upload } from 'lucide-react';
 
 interface ApiResponse {
   success: boolean;
@@ -978,8 +978,22 @@ export default function XHSExtractor() {
           <div className="ml-12 mt-1">
             <span className="text-xs text-gray-400 font-normal tracking-wide leading-tight">发现红书爆款，收藏你的专属灵感</span>
           </div>
-          {savedNotes.length > 0 && (
-            <div className="absolute top-6 right-8">
+          
+          {/* 右侧操作区域 */}
+          <div className="absolute top-6 right-8 flex items-center gap-3">
+            {/* 数据迁移按钮 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => window.open('/migrate', '_blank')}
+              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+            >
+              <Upload className="h-4 w-4 mr-1" />
+              数据迁移
+            </Button>
+            
+            {/* 清空收藏按钮 */}
+            {savedNotes.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -989,8 +1003,8 @@ export default function XHSExtractor() {
                 <Trash2 className="h-4 w-4 mr-1" />
                 清空收藏
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 

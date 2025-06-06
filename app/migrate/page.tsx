@@ -3,9 +3,9 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import XHSExtractor from '@/components/xhs-extractor';
+import { DataMigration } from '@/components/data-migration';
 
-export default function Home() {
+export default function MigratePage() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
@@ -35,6 +35,9 @@ export default function Home() {
     return null;
   }
 
-  // 已登录，显示主应用
-  return <XHSExtractor />;
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <DataMigration />
+    </div>
+  );
 } 
