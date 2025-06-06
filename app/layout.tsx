@@ -1,13 +1,12 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
-import { AuthProvider } from '@/lib/auth-context'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: '红书对标库',
-  description: '发现红书爆款，收藏你的专属灵感',
+  title: '小红书信息提取器',
+  description: '使用Coze AI快速提取小红书笔记信息',
 }
 
 export default function RootLayout({
@@ -18,9 +17,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className={inter.className}>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        {children}
       </body>
     </html>
   )

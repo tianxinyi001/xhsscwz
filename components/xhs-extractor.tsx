@@ -483,37 +483,14 @@ export default function XHSExtractor() {
 
   // 在客户端初始化时加载数据
   useEffect(() => {
-    // 添加调试日志
-    const storedNotes = StorageManager.getAllNotes();
-    console.log('从localStorage读取的原始数据:', storedNotes);
-    
-    if (storedNotes.length > 0) {
-      console.log('第一个笔记的完整结构:', storedNotes[0]);
-      console.log('第一个笔记的images字段:', storedNotes[0].images);
-      console.log('第一个笔记的images类型:', typeof storedNotes[0].images);
-      console.log('第一个笔记的images长度:', storedNotes[0].images?.length);
-    }
-    
-    const notes = storedNotes.map(note => {
-      const simpleNote = {
-        id: note.id,
-        title: note.title,
-        cover: note.images[0] || '',
-        url: note.url || '',
-        tags: note.tags || [],
-        extractedAt: note.extractedAt
-      };
-      
-      console.log(`笔记 ${note.id}:`, {
-        originalImages: note.images,
-        extractedCover: simpleNote.cover,
-        title: note.title
-      });
-      
-      return simpleNote;
-    });
-    
-    console.log('转换后的笔记数据:', notes);
+    const notes = StorageManager.getAllNotes().map(note => ({
+      id: note.id,
+      title: note.title,
+      cover: note.images[0] || '',
+      url: note.url || '',
+      tags: note.tags || [],
+      extractedAt: note.extractedAt
+    }));
     setSavedNotes(notes);
     
     // 提取所有已存在的标签
@@ -821,27 +798,20 @@ export default function XHSExtractor() {
 
   // 处理图片URL，使用代理来绕过防盗链
   const getProxyImageUrl = (originalUrl: string): string => {
-    console.log('getProxyImageUrl 输入:', originalUrl);
-    
     if (!originalUrl || originalUrl === '无封面') {
-      console.log('图片URL为空或无封面');
       return '';
     }
     
     // 如果已经是代理URL，直接返回
     if (originalUrl.startsWith('/api/image-proxy')) {
-      console.log('已经是代理URL，直接返回');
       return originalUrl;
     }
     
     // 如果是小红书CDN链接，使用代理
     if (originalUrl.includes('xhscdn.com')) {
-      const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(originalUrl)}`;
-      console.log('转换为代理URL:', proxyUrl);
-      return proxyUrl;
+      return `/api/image-proxy?url=${encodeURIComponent(originalUrl)}`;
     }
     
-    console.log('直接返回原始URL:', originalUrl);
     return originalUrl;
   };
 
