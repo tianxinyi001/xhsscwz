@@ -594,54 +594,189 @@ export default function XHSExtractor() {
     const existingTags = Array.from(new Set(notes.flatMap(note => note.tags)));
     setAllTags(existingTags);
     
-    // 批量修复历史数据中的图片URL
-    fixHistoricalImageUrls(notes);
+    // 批量修复历史数据中的图片URL - 延迟执行以确保界面已渲染
+    setTimeout(() => {
+      fixHistoricalImageUrls(notes);
+    }, 500);
   }, []);
 
   // 批量修复历史数据中的图片URL
   const fixHistoricalImageUrls = (notes: SimpleNote[]) => {
-    let hasUpdates = false;
-    const fixedNotes: string[] = [];
-    
-    notes.forEach(note => {
-      if (note.cover && !note.cover.startsWith('/api/image-proxy') && note.cover.includes('xhscdn.com')) {
-        // 需要修复的URL
-        let fixedUrl = note.cover;
-        
-        // 确保使用HTTPS
-        if (fixedUrl.startsWith('http://')) {
-          fixedUrl = fixedUrl.replace('http://', 'https://');
+    try {
+      let hasUpdates = false;
+      const fixedNotes: { title: string; originalUrl: string; fixedUrl: string }[] = [];
+      
+      console.log('🔧 开始检查需要修复的图片URL...');
+      
+      notes.forEach(note => {
+        try {
+          if (note.cover && note.cover.includes('xhscdn.com')) {
+            let needsFix = false;
+            let fixedUrl = note.cover;
+            
+            // 检查是否需要修复
+            if (!note.cover.startsWith('/api/image-proxy')) {
+              needsFix = true;
+              
+              // 确保使用HTTPS
+              if (fixedUrl.startsWith('http://')) {
+                fixedUrl = fixedUrl.replace('http://', 'https://');
+              }
+              
+              // 转换为代理URL
+              fixedUrl = `/api/image-proxy?url=${encodeURIComponent(fixedUrl)}`;
+            }
+            
+            if (needsFix) {
+              // 更新localStorage中的数据
+              const existingNote = StorageManager.getNoteById(note.id);
+              if (existingNote && existingNote.images && existingNote.images.length > 0) {
+                const originalImageUrl = existingNote.images[0];
+                existingNote.images[0] = fixedUrl;
+                StorageManager.saveNote(existingNote);
+                
+                // 标记需要更新界面
+                hasUpdates = true;
+                note.cover = fixedUrl;
+                
+                fixedNotes.push({
+                  title: note.title,
+                  originalUrl: originalImageUrl,
+                  fixedUrl: fixedUrl
+                });
+                
+                console.log(`✅ 修复: ${note.title}`, {
+                  原始: originalImageUrl,
+                  修复后: fixedUrl.substring(0, 80) + '...'
+                });
+              }
+            }
+          }
+        } catch (noteError) {
+          console.error(`修复笔记失败: ${note.title}`, noteError);
         }
+      });
+      
+      // 如果有更新，刷新界面并提示用户
+      if (hasUpdates) {
+        setSavedNotes([...notes]);
+        console.log(`🎉 批量修复完成！已修复 ${fixedNotes.length} 篇笔记的图片显示问题`);
         
-        // 转换为代理URL
-        const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(fixedUrl)}`;
+        // 显示详细的修复报告
+        console.group('📋 详细修复报告');
+        fixedNotes.forEach((item, index) => {
+          console.log(`${index + 1}. ${item.title.substring(0, 30)}...`);
+        });
+        console.groupEnd();
         
-        // 更新localStorage中的数据
-        const existingNote = StorageManager.getNoteById(note.id);
-        if (existingNote && existingNote.images[0] !== proxyUrl) {
-          existingNote.images[0] = proxyUrl;
-          StorageManager.saveNote(existingNote);
+        // 显示用户友好的通知
+        setTimeout(() => {
+          const notification = document.createElement('div');
+          notification.innerHTML = `
+            <div style="
+              position: fixed; 
+              top: 80px; 
+              right: 20px; 
+              background: linear-gradient(135deg, #4ade80, #22c55e); 
+              color: white; 
+              padding: 16px 20px; 
+              border-radius: 12px; 
+              box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+              z-index: 10000;
+              font-family: system-ui, -apple-system, sans-serif;
+              max-width: 320px;
+              animation: slideIn 0.3s ease-out;
+            ">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="font-size: 20px;">🔧</span>
+                <strong>图片修复完成</strong>
+              </div>
+              <div style="font-size: 14px; opacity: 0.95;">
+                成功修复 ${fixedNotes.length} 篇笔记的封面显示问题
+              </div>
+              <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">
+                现在所有图片都能正常显示了 ✨
+              </div>
+            </div>
+            <style>
+              @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+              }
+            </style>
+          `;
           
-          // 标记需要更新界面
-          hasUpdates = true;
-          note.cover = proxyUrl;
-          fixedNotes.push(note.title);
+          document.body.appendChild(notification);
+          
+          // 播放成功音效
+          playNotificationSound();
+          
+          // 5秒后自动移除通知
+          setTimeout(() => {
+            if (notification.parentNode) {
+              notification.style.animation = 'slideIn 0.3s ease-out reverse';
+              setTimeout(() => {
+                document.body.removeChild(notification);
+              }, 300);
+            }
+          }, 5000);
+        }, 1000);
+        
+      } else {
+        console.log('✅ 图片URL检查完成，无需修复');
+        
+        // 如果是手动触发的修复，显示提示
+        if (notes.length > 0) {
+          setTimeout(() => {
+            const notification = document.createElement('div');
+            notification.innerHTML = `
+              <div style="
+                position: fixed; 
+                top: 80px; 
+                right: 20px; 
+                background: linear-gradient(135deg, #6b7280, #4b5563); 
+                color: white; 
+                padding: 16px 20px; 
+                border-radius: 12px; 
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                z-index: 10000;
+                font-family: system-ui, -apple-system, sans-serif;
+                max-width: 320px;
+                animation: slideIn 0.3s ease-out;
+              ">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                  <span style="font-size: 20px;">✅</span>
+                  <strong>检查完成</strong>
+                </div>
+                <div style="font-size: 14px; opacity: 0.95;">
+                  所有图片URL都已经是最新格式，无需修复
+                </div>
+              </div>
+              <style>
+                @keyframes slideIn {
+                  from { transform: translateX(100%); opacity: 0; }
+                  to { transform: translateX(0); opacity: 1; }
+                }
+              </style>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // 3秒后自动移除通知
+            setTimeout(() => {
+              if (notification.parentNode) {
+                notification.style.animation = 'slideIn 0.3s ease-out reverse';
+                setTimeout(() => {
+                  document.body.removeChild(notification);
+                }, 300);
+              }
+            }, 3000);
+          }, 100);
         }
       }
-    });
-    
-    // 如果有更新，刷新界面并提示用户
-    if (hasUpdates) {
-      setSavedNotes([...notes]);
-      console.log('批量修复完成，已更新界面');
-      console.log('修复的笔记:', fixedNotes);
-      
-      // 显示友好提示
-      setTimeout(() => {
-        if (fixedNotes.length > 0) {
-          console.log(`🔧 已自动修复 ${fixedNotes.length} 篇笔记的图片显示问题`);
-        }
-      }, 1000);
+    } catch (error) {
+      console.error('批量修复过程中出现错误:', error);
+      setError('图片修复过程中出现错误，请稍后重试');
     }
   };
 
@@ -1268,6 +1403,15 @@ export default function XHSExtractor() {
           {savedNotes.length > 0 && (
             <div className="absolute top-6 right-8">
               <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => fixHistoricalImageUrls(savedNotes)}
+                  className="text-gray-500 hover:text-orange-500"
+                  title="修复图片显示问题"
+                >
+                  🔧 修复图片
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
