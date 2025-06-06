@@ -578,6 +578,10 @@ export default function XHSExtractor() {
   // 数据导出/导入相关状态
   const [showDataManagement, setShowDataManagement] = useState(false);
 
+  // 重新提取封面相关状态
+  const [isRefreshingCovers, setIsRefreshingCovers] = useState(false);
+  const [refreshProgress, setRefreshProgress] = useState({ current: 0, total: 0 });
+
   // 在客户端初始化时加载数据
   useEffect(() => {
     const notes = StorageManager.getAllNotes().map(note => ({
@@ -1226,6 +1230,57 @@ export default function XHSExtractor() {
     }
   };
 
+  // 单个笔记重新提取封面
+  const refreshSingleCover = async (noteId: string) => {
+    const note = savedNotes.find(n => n.id === noteId);
+    if (!note || !note.url) return;
+
+    try {
+      console.log(`🔄 重新提取单个封面: ${note.title}`);
+      
+      const extractedUrl = extractXHSUrl(note.url);
+      if (!extractedUrl || !isValidXHSUrl(extractedUrl)) {
+        console.warn(`跳过无效URL: ${note.url}`);
+        return;
+      }
+      
+      const response = await fetch('/api/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: extractedUrl, quickPreview: true }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API调用失败: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success && result.data && result.data.cover && result.data.cover !== '无封面') {
+        const updatedCover = result.data.cover;
+        
+        // 更新localStorage
+        const existingNote = StorageManager.getNoteById(noteId);
+        if (existingNote) {
+          existingNote.images[0] = updatedCover;
+          StorageManager.saveNote(existingNote);
+        }
+        
+        // 更新界面状态
+        setSavedNotes(prev => prev.map(n => 
+          n.id === noteId ? { ...n, cover: updatedCover } : n
+        ));
+        
+        console.log(`✅ 单个封面更新成功: ${note.title}`);
+        playNotificationSound();
+      }
+    } catch (error) {
+      console.error(`单个封面提取失败: ${note.title}`, error);
+    }
+  };
+
   // 渲染小红书风格的简化笔记卡片
   const renderNoteCard = (note: SimpleNote) => {
     const proxyImageUrl = getProxyImageUrl(note.cover);
@@ -1275,7 +1330,7 @@ export default function XHSExtractor() {
                   return;
                 }
                 
-                // 最终失败，显示占位符
+                // 最终失败，显示占位符和重新提取按钮
                 target.style.display = 'none';
                 const placeholder = target.nextElementSibling as HTMLElement;
                 if (placeholder) {
@@ -1302,6 +1357,17 @@ export default function XHSExtractor() {
                 <span className="text-gray-500 text-xs">📷</span>
               </div>
               <span className="text-gray-400 text-xs">暂无封面</span>
+              {/* 重新提取封面按钮 */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  refreshSingleCover(note.id);
+                }}
+                className="mt-2 px-2 py-1 bg-green-500 hover:bg-green-600 text-white text-xs rounded transition-colors"
+                title="重新提取封面"
+              >
+                🔄 重新获取
+              </button>
             </div>
           </div>
           
@@ -1365,10 +1431,208 @@ export default function XHSExtractor() {
     );
   };
 
+  // 重新提取丢失的封面
+  const refreshMissingCovers = async () => {
+    if (isRefreshingCovers) return;
+    
+    setIsRefreshingCovers(true);
+    setError(null);
+    
+    try {
+      // 找出需要重新提取封面的笔记
+      const notesToRefresh = savedNotes.filter(note => 
+        note.url && (
+          !note.cover || 
+          note.cover === '无封面' || 
+          note.cover === '' ||
+          note.cover.includes('暂无封面')
+        )
+      );
+      
+      if (notesToRefresh.length === 0) {
+        setTimeout(() => {
+          const notification = document.createElement('div');
+          notification.innerHTML = `
+            <div style="
+              position: fixed; 
+              top: 80px; 
+              right: 20px; 
+              background: linear-gradient(135deg, #6b7280, #4b5563); 
+              color: white; 
+              padding: 16px 20px; 
+              border-radius: 12px; 
+              box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+              z-index: 10000;
+              font-family: system-ui, -apple-system, sans-serif;
+              max-width: 320px;
+              animation: slideIn 0.3s ease-out;
+            ">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="font-size: 20px;">✅</span>
+                <strong>检查完成</strong>
+              </div>
+              <div style="font-size: 14px; opacity: 0.95;">
+                所有笔记都已有封面，无需重新提取
+              </div>
+            </div>
+            <style>
+              @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+              }
+            </style>
+          `;
+          
+          document.body.appendChild(notification);
+          
+          setTimeout(() => {
+            if (notification.parentNode) {
+              notification.style.animation = 'slideIn 0.3s ease-out reverse';
+              setTimeout(() => {
+                document.body.removeChild(notification);
+              }, 300);
+            }
+          }, 3000);
+        }, 100);
+        
+        setIsRefreshingCovers(false);
+        return;
+      }
+      
+      console.log(`🔄 开始重新提取 ${notesToRefresh.length} 篇笔记的封面...`);
+      setRefreshProgress({ current: 0, total: notesToRefresh.length });
+      
+      const successCount = { value: 0 };
+      const failCount = { value: 0 };
+      
+      // 逐个重新提取封面
+      for (let i = 0; i < notesToRefresh.length; i++) {
+        const note = notesToRefresh[i];
+        setRefreshProgress({ current: i + 1, total: notesToRefresh.length });
+        
+        try {
+          console.log(`📷 重新提取封面 (${i + 1}/${notesToRefresh.length}): ${note.title}`);
+          
+          // 从URL中提取正确的小红书链接
+          const extractedUrl = extractXHSUrl(note.url);
+          if (!extractedUrl || !isValidXHSUrl(extractedUrl)) {
+            console.warn(`跳过无效URL: ${note.url}`);
+            failCount.value++;
+            continue;
+          }
+          
+          // 调用API重新提取封面
+          const response = await fetch('/api/extract', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url: extractedUrl, quickPreview: true }),
+          });
+          
+          if (!response.ok) {
+            throw new Error(`API调用失败: ${response.status}`);
+          }
+          
+          const result = await response.json();
+          
+          if (result.success && result.data && result.data.cover && result.data.cover !== '无封面') {
+            // 更新笔记封面
+            const updatedCover = result.data.cover;
+            
+            // 更新localStorage
+            const existingNote = StorageManager.getNoteById(note.id);
+            if (existingNote) {
+              existingNote.images[0] = updatedCover;
+              StorageManager.saveNote(existingNote);
+            }
+            
+            // 更新界面状态
+            setSavedNotes(prev => prev.map(n => 
+              n.id === note.id ? { ...n, cover: updatedCover } : n
+            ));
+            
+            successCount.value++;
+            console.log(`✅ 封面更新成功: ${note.title}`);
+          } else {
+            console.warn(`封面提取失败: ${note.title}`, result);
+            failCount.value++;
+          }
+          
+          // 避免请求过于频繁
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+        } catch (error) {
+          console.error(`封面提取失败: ${note.title}`, error);
+          failCount.value++;
+        }
+      }
+      
+      // 显示完成通知
+      setTimeout(() => {
+        const notification = document.createElement('div');
+        notification.innerHTML = `
+          <div style="
+            position: fixed; 
+            top: 80px; 
+            right: 20px; 
+            background: linear-gradient(135deg, #10b981, #059669); 
+            color: white; 
+            padding: 16px 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            z-index: 10000;
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 320px;
+            animation: slideIn 0.3s ease-out;
+          ">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 20px;">📷</span>
+              <strong>封面刷新完成</strong>
+            </div>
+            <div style="font-size: 14px; opacity: 0.95; margin-bottom: 4px;">
+              成功恢复 ${successCount.value} 个封面
+            </div>
+            ${failCount.value > 0 ? `<div style="font-size: 12px; opacity: 0.8;">失败 ${failCount.value} 个</div>` : ''}
+          </div>
+          <style>
+            @keyframes slideIn {
+              from { transform: translateX(100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          </style>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // 播放成功音效
+        playNotificationSound();
+        
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => {
+              document.body.removeChild(notification);
+            }, 300);
+          }
+        }, 5000);
+      }, 500);
+      
+      console.log(`🎉 封面刷新完成! 成功: ${successCount.value}, 失败: ${failCount.value}`);
+      
+    } catch (error) {
+      console.error('重新提取封面过程中出现错误:', error);
+      setError('重新提取封面失败，请稍后重试');
+    } finally {
+      setIsRefreshingCovers(false);
+      setRefreshProgress({ current: 0, total: 0 });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 全局加载进度条 */}
-      {isLoading && (
+      {(isLoading || isRefreshingCovers) && (
         <div className="fixed top-0 left-0 right-0 z-50">
           <div className="bg-gradient-to-r from-red-400 to-pink-400 h-1 relative overflow-hidden">
             <div className="absolute inset-0 bg-white/30" 
@@ -1381,7 +1645,12 @@ export default function XHSExtractor() {
             <div className="container mx-auto px-4 py-3">
               <div className="flex items-center justify-center gap-3 text-sm text-gray-700">
                 <div className="animate-spin h-4 w-4 border-2 border-red-500 border-t-transparent rounded-full"></div>
-                <span className="font-medium">{loadingStage || '正在处理...'}</span>
+                <span className="font-medium">
+                  {isRefreshingCovers 
+                    ? `正在重新提取封面... (${refreshProgress.current}/${refreshProgress.total})`
+                    : (loadingStage || '正在处理...')
+                  }
+                </span>
               </div>
             </div>
           </div>
@@ -1403,6 +1672,23 @@ export default function XHSExtractor() {
           {savedNotes.length > 0 && (
             <div className="absolute top-6 right-8">
               <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={refreshMissingCovers}
+                  disabled={isRefreshingCovers}
+                  className="text-gray-500 hover:text-green-500"
+                  title="重新提取丢失的封面"
+                >
+                  {isRefreshingCovers ? (
+                    <>
+                      <div className="animate-spin h-3 w-3 border border-green-500 border-t-transparent rounded-full mr-1"></div>
+                      📷 提取中 {refreshProgress.current}/{refreshProgress.total}
+                    </>
+                  ) : (
+                    <>📷 刷新封面</>
+                  )}
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
