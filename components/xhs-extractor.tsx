@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { StorageManager } from '@/lib/storage';
 import { StoredNote } from '@/lib/types';
 import { generateId, isValidXHSUrl, extractXHSUrl } from '@/lib/utils';
-import { Trash2, ExternalLink, Plus, Tag, X, Upload } from 'lucide-react';
+import { Trash2, ExternalLink, Plus, Tag, X } from 'lucide-react';
 
 interface ApiResponse {
   success: boolean;
@@ -483,34 +483,19 @@ export default function XHSExtractor() {
 
   // 在客户端初始化时加载数据
   useEffect(() => {
-    // 从服务器加载数据而不是localStorage
-    const loadServerData = async () => {
-      try {
-        const response = await fetch('/api/notes');
-        const result = await response.json();
-        
-        if (result.success) {
-          const notes = result.notes.map((note: any) => ({
-            id: note.id,
-            title: note.title,
-            cover: note.images[0] || '',
-            url: note.url || '',
-            tags: note.tags || [],
-            extractedAt: note.extractedAt
-          }));
-          
-          console.log('从服务器加载的笔记:', notes);
-          setSavedNotes(notes);
-          setAllTags(result.tags || []);
-        } else {
-          console.error('加载笔记失败:', result.error);
-        }
-      } catch (error) {
-        console.error('加载笔记错误:', error);
-      }
-    };
-
-    loadServerData();
+    const notes = StorageManager.getAllNotes().map(note => ({
+      id: note.id,
+      title: note.title,
+      cover: note.images[0] || '',
+      url: note.url || '',
+      tags: note.tags || [],
+      extractedAt: note.extractedAt
+    }));
+    setSavedNotes(notes);
+    
+    // 提取所有已存在的标签
+    const existingTags = Array.from(new Set(notes.flatMap(note => note.tags)));
+    setAllTags(existingTags);
   }, []);
 
   // 创建新标签
@@ -658,36 +643,23 @@ export default function XHSExtractor() {
       };
       
       console.log('保存的笔记对象:', simpleNote);
+      console.log('保存的笔记URL:', simpleNote.url);
+      console.log('保存的笔记URL类型:', typeof simpleNote.url);
 
-      // 保存到服务器而不是本地存储
-      const fullNote = {
+      // 保存到本地存储（保持兼容性）
+      const fullNote: StoredNote = {
         id: simpleNote.id,
         title: simpleNote.title,
         content: '',
         author: { name: '' },
         images: simpleNote.cover ? [simpleNote.cover] : [],
         tags: simpleNote.tags,
-        url: simpleNote.url,
-        createTime: simpleNote.extractedAt
+        url: simpleNote.url, // 使用提取的正确URL
+        createTime: simpleNote.extractedAt,
+        extractedAt: simpleNote.extractedAt
       };
 
-      console.log('发送到服务器的笔记:', fullNote);
-
-      const saveResponse = await fetch('/api/notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(fullNote),
-      });
-
-      const saveResult = await saveResponse.json();
-      
-      if (!saveResult.success) {
-        throw new Error(saveResult.error || '保存失败');
-      }
-
-      console.log('服务器保存成功:', saveResult.note);
+      StorageManager.saveNote(fullNote);
       
       setLoadingStage('收藏成功！');
       
@@ -726,27 +698,13 @@ export default function XHSExtractor() {
   };
 
   // 确认删除
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = () => {
     if (deletingNote) {
-      try {
-        const response = await fetch(`/api/notes/${deletingNote.id}`, {
-          method: 'DELETE',
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-          setSavedNotes(prev => prev.filter(note => note.id !== deletingNote.id));
-          // 播放提示音
-          playDeleteSound();
-        } else {
-          console.error('删除失败:', result.error);
-          alert('删除失败: ' + result.error);
-        }
-      } catch (error) {
-        console.error('删除请求失败:', error);
-        alert('删除失败，请稍后重试');
-      }
+      StorageManager.deleteNote(deletingNote.id);
+      setSavedNotes(prev => prev.filter(note => note.id !== deletingNote.id));
+      
+      // 播放提示音
+      playDeleteSound();
     }
     setShowDeleteModal(false);
     setDeletingNote(null);
@@ -765,29 +723,29 @@ export default function XHSExtractor() {
   };
 
   // 保存标签修改
-  const handleSaveTagEdit = async (noteId: string, newTags: string[]) => {
-    try {
-      // 更新本地状态
-      setSavedNotes(prev => prev.map(note => 
-        note.id === noteId 
-          ? { ...note, tags: newTags }
-          : note
-      ));
+  const handleSaveTagEdit = (noteId: string, newTags: string[]) => {
+    // 更新本地状态
+    setSavedNotes(prev => prev.map(note => 
+      note.id === noteId 
+        ? { ...note, tags: newTags }
+        : note
+    ));
 
-      // TODO: 这里需要添加更新服务器标签的API
-      // 暂时只更新本地状态
-      
-      // 更新全局标签列表
-      const allNotesAfterUpdate = savedNotes.map(note => 
-        note.id === noteId 
-          ? { ...note, tags: newTags }
-          : note
-      );
-      const updatedAllTags = Array.from(new Set(allNotesAfterUpdate.flatMap(note => note.tags)));
-      setAllTags(updatedAllTags);
-    } catch (error) {
-      console.error('更新标签失败:', error);
+    // 更新本地存储
+    const existingNote = StorageManager.getNoteById(noteId);
+    if (existingNote) {
+      const updatedNote = { ...existingNote, tags: newTags };
+      StorageManager.saveNote(updatedNote);
     }
+
+    // 更新全局标签列表
+    const allNotesAfterUpdate = savedNotes.map(note => 
+      note.id === noteId 
+        ? { ...note, tags: newTags }
+        : note
+    );
+    const updatedAllTags = Array.from(new Set(allNotesAfterUpdate.flatMap(note => note.tags)));
+    setAllTags(updatedAllTags);
   };
 
   const handleClearAll = () => {
@@ -801,20 +759,15 @@ export default function XHSExtractor() {
   };
 
   // 确认清空
-  const handleConfirmClearAll = async () => {
-    try {
-      // TODO: 添加清空所有笔记的API
-      // 暂时只更新本地状态
-      setSavedNotes([]);
-      setAllTags([]);
-      setFilterTag(null);
-      setShowClearAllModal(false);
-      
-      // 播放删除音效
-      playDeleteSound();
-    } catch (error) {
-      console.error('清空失败:', error);
-    }
+  const handleConfirmClearAll = () => {
+    StorageManager.clearAllNotes();
+    setSavedNotes([]);
+    setAllTags([]);
+    setFilterTag(null);
+    setShowClearAllModal(false);
+    
+    // 播放删除音效
+    playDeleteSound();
   };
 
   // 取消清空
@@ -845,27 +798,20 @@ export default function XHSExtractor() {
 
   // 处理图片URL，使用代理来绕过防盗链
   const getProxyImageUrl = (originalUrl: string): string => {
-    console.log('getProxyImageUrl 输入:', originalUrl);
-    
     if (!originalUrl || originalUrl === '无封面') {
-      console.log('图片URL为空或无封面');
       return '';
     }
     
     // 如果已经是代理URL，直接返回
     if (originalUrl.startsWith('/api/image-proxy')) {
-      console.log('已经是代理URL，直接返回');
       return originalUrl;
     }
     
     // 如果是小红书CDN链接，使用代理
     if (originalUrl.includes('xhscdn.com')) {
-      const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(originalUrl)}`;
-      console.log('转换为代理URL:', proxyUrl);
-      return proxyUrl;
+      return `/api/image-proxy?url=${encodeURIComponent(originalUrl)}`;
     }
     
-    console.log('直接返回原始URL:', originalUrl);
     return originalUrl;
   };
 
@@ -1003,20 +949,11 @@ export default function XHSExtractor() {
             <span className="text-xs text-gray-400 font-normal tracking-wide leading-tight">发现红书爆款，收藏你的专属灵感</span>
           </div>
           {savedNotes.length > 0 && (
-            <div className="absolute top-6 right-8 flex items-center gap-2">
+            <div className="absolute top-6 right-8">
               <Button
-                onClick={() => window.open('/migrate', '_blank')}
                 variant="ghost"
                 size="sm"
-                className="text-blue-500 hover:text-blue-600"
-              >
-                <Upload className="h-4 w-4 mr-1" />
-                数据迁移
-              </Button>
-              <Button
                 onClick={handleShowClearAllConfirm}
-                variant="ghost"
-                size="sm"
                 className="text-gray-500 hover:text-red-500"
               >
                 <Trash2 className="h-4 w-4 mr-1" />
