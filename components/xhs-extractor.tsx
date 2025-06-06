@@ -455,6 +455,100 @@ function ClearAllConfirmModal({
   );
 }
 
+// 数据管理弹窗组件
+function DataManagementModal({ 
+  isOpen, 
+  onClose, 
+  onExport,
+  onImport,
+  notesCount 
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onExport: () => void;
+  onImport: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  notesCount: number;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold">数据管理</h3>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="space-y-4">
+          {/* 当前数据状态 */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h4 className="font-medium text-gray-800 mb-2">当前数据</h4>
+            <p className="text-sm text-gray-600">已收藏 {notesCount} 篇笔记</p>
+            <p className="text-xs text-gray-500 mt-1">
+              数据存储在浏览器本地，换浏览器或清理缓存会丢失
+            </p>
+          </div>
+
+          {/* 导出数据 */}
+          <div className="space-y-3">
+            <h4 className="font-medium text-gray-800">备份数据</h4>
+            <Button
+              onClick={onExport}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white"
+            >
+              📥 导出备份文件
+            </Button>
+            <p className="text-xs text-gray-500">
+              将您的收藏数据导出为JSON文件，可在其他浏览器中恢复
+            </p>
+          </div>
+
+          {/* 导入数据 */}
+          <div className="space-y-3">
+            <h4 className="font-medium text-gray-800">恢复数据</h4>
+            <div className="relative">
+              <input
+                type="file"
+                accept=".json"
+                onChange={onImport}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                id="import-file"
+              />
+              <label
+                htmlFor="import-file"
+                className="flex items-center justify-center w-full bg-green-500 hover:bg-green-600 text-white rounded-lg px-4 py-2 cursor-pointer transition-colors font-medium text-sm"
+              >
+                📤 选择备份文件恢复
+              </label>
+            </div>
+            <p className="text-xs text-gray-500">
+              选择之前导出的JSON备份文件，自动合并去重
+            </p>
+          </div>
+
+          {/* 使用说明 */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <h5 className="text-sm font-medium text-yellow-800 mb-1">💡 使用建议</h5>
+            <ul className="text-xs text-yellow-700 space-y-1">
+              <li>• 定期导出备份，防止数据丢失</li>
+              <li>• 换浏览器时使用备份文件恢复数据</li>
+              <li>• 导入时会自动过滤重复内容</li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <Button variant="ghost" onClick={onClose} className="flex-1">
+            关闭
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function XHSExtractor() {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -481,6 +575,9 @@ export default function XHSExtractor() {
   // 清空确认状态
   const [showClearAllModal, setShowClearAllModal] = useState(false);
 
+  // 数据导出/导入相关状态
+  const [showDataManagement, setShowDataManagement] = useState(false);
+
   // 在客户端初始化时加载数据
   useEffect(() => {
     const notes = StorageManager.getAllNotes().map(note => ({
@@ -496,7 +593,57 @@ export default function XHSExtractor() {
     // 提取所有已存在的标签
     const existingTags = Array.from(new Set(notes.flatMap(note => note.tags)));
     setAllTags(existingTags);
+    
+    // 批量修复历史数据中的图片URL
+    fixHistoricalImageUrls(notes);
   }, []);
+
+  // 批量修复历史数据中的图片URL
+  const fixHistoricalImageUrls = (notes: SimpleNote[]) => {
+    let hasUpdates = false;
+    const fixedNotes: string[] = [];
+    
+    notes.forEach(note => {
+      if (note.cover && !note.cover.startsWith('/api/image-proxy') && note.cover.includes('xhscdn.com')) {
+        // 需要修复的URL
+        let fixedUrl = note.cover;
+        
+        // 确保使用HTTPS
+        if (fixedUrl.startsWith('http://')) {
+          fixedUrl = fixedUrl.replace('http://', 'https://');
+        }
+        
+        // 转换为代理URL
+        const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(fixedUrl)}`;
+        
+        // 更新localStorage中的数据
+        const existingNote = StorageManager.getNoteById(note.id);
+        if (existingNote && existingNote.images[0] !== proxyUrl) {
+          existingNote.images[0] = proxyUrl;
+          StorageManager.saveNote(existingNote);
+          
+          // 标记需要更新界面
+          hasUpdates = true;
+          note.cover = proxyUrl;
+          fixedNotes.push(note.title);
+        }
+      }
+    });
+    
+    // 如果有更新，刷新界面并提示用户
+    if (hasUpdates) {
+      setSavedNotes([...notes]);
+      console.log('批量修复完成，已更新界面');
+      console.log('修复的笔记:', fixedNotes);
+      
+      // 显示友好提示
+      setTimeout(() => {
+        if (fixedNotes.length > 0) {
+          console.log(`🔧 已自动修复 ${fixedNotes.length} 篇笔记的图片显示问题`);
+        }
+      }, 1000);
+    }
+  };
 
   // 创建新标签
   const handleCreateTag = (tag: string) => {
@@ -775,6 +922,112 @@ export default function XHSExtractor() {
     setShowClearAllModal(false);
   };
 
+  // 数据导出功能
+  const handleExportData = () => {
+    try {
+      const allNotes = StorageManager.getAllNotes();
+      const exportData = {
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        notes: allNotes,
+        tags: allTags
+      };
+      
+      const dataStr = JSON.stringify(exportData, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(dataBlob);
+      link.download = `小红书收藏_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // 播放提示音
+      playNotificationSound();
+      
+      console.log('数据导出成功:', allNotes.length, '篇笔记');
+    } catch (error) {
+      console.error('数据导出失败:', error);
+      setError('数据导出失败，请稍后重试');
+    }
+  };
+
+  // 数据导入功能
+  const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const importData = JSON.parse(e.target?.result as string);
+        
+        // 验证数据格式
+        if (!importData.notes || !Array.isArray(importData.notes)) {
+          throw new Error('无效的数据格式');
+        }
+        
+        // 获取现有数据
+        const existingNotes = StorageManager.getAllNotes();
+        const existingIds = new Set(existingNotes.map(note => note.id));
+        
+        // 过滤重复数据
+        const newNotes = importData.notes.filter((note: StoredNote) => !existingIds.has(note.id));
+        
+        if (newNotes.length === 0) {
+          setError('没有新的数据需要导入');
+          return;
+        }
+        
+        // 导入新数据
+        newNotes.forEach((note: StoredNote) => {
+          StorageManager.saveNote(note);
+        });
+        
+        // 更新界面
+        const updatedNotes = [...existingNotes, ...newNotes].map(note => ({
+          id: note.id,
+          title: note.title,
+          cover: note.images[0] || '',
+          url: note.url || '',
+          tags: note.tags || [],
+          extractedAt: note.extractedAt
+        }));
+        
+        setSavedNotes(updatedNotes);
+        
+        // 更新标签
+        const allImportedTags = Array.from(new Set([
+          ...allTags,
+          ...newNotes.flatMap((note: StoredNote) => note.tags || [])
+        ]));
+        setAllTags(allImportedTags);
+        
+        // 播放提示音
+        playNotificationSound();
+        
+        console.log('数据导入成功:', newNotes.length, '篇新笔记');
+        setShowDataManagement(false);
+        
+        // 显示成功消息
+        const successMsg = `成功导入 ${newNotes.length} 篇笔记`;
+        setTimeout(() => {
+          alert(successMsg);
+        }, 100);
+        
+      } catch (error) {
+        console.error('数据导入失败:', error);
+        setError('数据导入失败，请检查文件格式');
+      }
+    };
+    
+    reader.readAsText(file);
+    
+    // 清空input
+    event.target.value = '';
+  };
+
   const openNote = (noteUrl: string) => {
     console.log('点击卡片，准备打开URL:', noteUrl);
     console.log('URL类型:', typeof noteUrl);
@@ -807,16 +1060,41 @@ export default function XHSExtractor() {
       return originalUrl;
     }
     
-    // 如果是小红书CDN链接，使用代理
-    if (originalUrl.includes('xhscdn.com')) {
-      return `/api/image-proxy?url=${encodeURIComponent(originalUrl)}`;
+    // 将HTTP转换为HTTPS
+    let processedUrl = originalUrl;
+    if (processedUrl.startsWith('http://')) {
+      processedUrl = processedUrl.replace('http://', 'https://');
     }
     
-    return originalUrl;
+    // 如果是小红书CDN链接，使用代理
+    if (processedUrl.includes('xhscdn.com')) {
+      return `/api/image-proxy?url=${encodeURIComponent(processedUrl)}`;
+    }
+    
+    return processedUrl;
+  };
+
+  // 修复历史数据中的图片URL
+  const fixImageUrl = (noteId: string, newImageUrl: string) => {
+    // 更新localStorage中的数据
+    const existingNote = StorageManager.getNoteById(noteId);
+    if (existingNote && existingNote.images[0] !== newImageUrl) {
+      existingNote.images[0] = newImageUrl;
+      StorageManager.saveNote(existingNote);
+      
+      // 更新界面显示
+      setSavedNotes(prev => prev.map(note => 
+        note.id === noteId 
+          ? { ...note, cover: newImageUrl }
+          : note
+      ));
+    }
   };
 
   // 渲染小红书风格的简化笔记卡片
   const renderNoteCard = (note: SimpleNote) => {
+    const proxyImageUrl = getProxyImageUrl(note.cover);
+    
     return (
       <div 
         key={note.id}
@@ -827,13 +1105,42 @@ export default function XHSExtractor() {
         <div className="relative overflow-hidden aspect-[3/4] w-full bg-gray-100 flex items-center justify-center">
           {note.cover ? (
             <img
-              src={getProxyImageUrl(note.cover)}
+              src={proxyImageUrl}
               alt={note.title}
               className="max-w-full max-h-full object-contain mx-auto"
               onError={(e) => {
-                // 图片加载失败时显示占位符
+                // 图片加载失败时的处理策略
                 console.error('图片加载失败:', note.cover);
+                console.error('代理URL:', proxyImageUrl);
+                
                 const target = e.target as HTMLImageElement;
+                
+                // 如果当前使用的不是代理URL，尝试使用代理
+                if (!note.cover.startsWith('/api/image-proxy') && note.cover.includes('xhscdn.com')) {
+                  const fallbackUrl = getProxyImageUrl(note.cover);
+                  if (fallbackUrl !== proxyImageUrl) {
+                    console.log('尝试代理URL:', fallbackUrl);
+                    target.src = fallbackUrl;
+                    
+                    // 修复localStorage中的数据
+                    fixImageUrl(note.id, fallbackUrl);
+                    return;
+                  }
+                }
+                
+                // 如果是HTTP URL，尝试HTTPS
+                if (note.cover.startsWith('http://')) {
+                  const httpsUrl = note.cover.replace('http://', 'https://');
+                  const httpsProxyUrl = getProxyImageUrl(httpsUrl);
+                  console.log('尝试HTTPS代理URL:', httpsProxyUrl);
+                  target.src = httpsProxyUrl;
+                  
+                  // 修复localStorage中的数据
+                  fixImageUrl(note.id, httpsProxyUrl);
+                  return;
+                }
+                
+                // 最终失败，显示占位符
                 target.style.display = 'none';
                 const placeholder = target.nextElementSibling as HTMLElement;
                 if (placeholder) {
@@ -841,16 +1148,26 @@ export default function XHSExtractor() {
                 }
               }}
               onLoad={() => {
-                console.log('图片加载成功:', note.cover);
+                console.log('图片加载成功:', proxyImageUrl);
+                
+                // 如果成功加载了修复后的URL，更新数据
+                if (proxyImageUrl !== note.cover && proxyImageUrl.startsWith('/api/image-proxy')) {
+                  fixImageUrl(note.id, proxyImageUrl);
+                }
               }}
             />
           ) : null}
           {/* 图片加载失败或无封面时的占位符 */}
           <div 
-            className="absolute inset-0 flex items-center justify-center"
+            className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200"
             style={{ display: note.cover ? 'none' : 'flex' }}
           >
-            <span className="text-gray-400 text-sm">暂无封面</span>
+            <div className="text-center">
+              <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center mx-auto mb-2">
+                <span className="text-gray-500 text-xs">📷</span>
+              </div>
+              <span className="text-gray-400 text-xs">暂无封面</span>
+            </div>
           </div>
           
           {/* 删除按钮 */}
@@ -950,15 +1267,25 @@ export default function XHSExtractor() {
           </div>
           {savedNotes.length > 0 && (
             <div className="absolute top-6 right-8">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleShowClearAllConfirm}
-                className="text-gray-500 hover:text-red-500"
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                清空收藏
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDataManagement(true)}
+                  className="text-gray-500 hover:text-blue-500"
+                >
+                  💾 备份恢复
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleShowClearAllConfirm}
+                  className="text-gray-500 hover:text-red-500"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  清空收藏
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -1099,6 +1426,15 @@ export default function XHSExtractor() {
         isOpen={showClearAllModal}
         onClose={handleCancelClearAll}
         onConfirm={handleConfirmClearAll}
+        notesCount={savedNotes.length}
+      />
+
+      {/* 数据管理弹窗 */}
+      <DataManagementModal
+        isOpen={showDataManagement}
+        onClose={() => setShowDataManagement(false)}
+        onExport={handleExportData}
+        onImport={handleImportData}
         notesCount={savedNotes.length}
       />
     </div>
