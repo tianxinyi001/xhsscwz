@@ -1326,6 +1326,9 @@ export default function XHSExtractor() {
           n.id === noteId ? { ...n, cover: updatedCover } : n
         ));
         
+        // 立即更新对应的图片元素，强制重新加载
+        forceRefreshImage(note.id, updatedCover, 100);
+        
         console.log(`✅ 单个封面更新成功: ${note.title}`);
         
         // 显示成功通知
@@ -1426,6 +1429,7 @@ export default function XHSExtractor() {
     return (
       <div 
         key={note.id}
+        data-note-id={note.id}
         className="xhs-note-card group"
         onClick={() => openNote(note.url)}
       >
@@ -1487,6 +1491,7 @@ export default function XHSExtractor() {
           ) : null}
           {/* 图片加载失败或无封面时的占位符 */}
           <div 
+            data-placeholder="true"
             className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200"
             style={{ display: note.cover ? 'none' : 'flex' }}
           >
@@ -1703,6 +1708,9 @@ export default function XHSExtractor() {
               n.id === note.id ? { ...n, cover: updatedCover } : n
             ));
             
+            // 立即更新对应的图片元素，错开更新时间避免闪烁
+            forceRefreshImage(note.id, updatedCover, 200 * i);
+            
             successCount.value++;
             console.log(`✅ 封面更新成功: ${note.title}`);
           } else {
@@ -1778,6 +1786,50 @@ export default function XHSExtractor() {
       setIsRefreshingCovers(false);
       setRefreshProgress({ current: 0, total: 0 });
     }
+  };
+
+  // 强制刷新指定笔记的图片显示
+  const forceRefreshImage = (noteId: string, newImageUrl: string, delay: number = 100) => {
+    setTimeout(() => {
+      const noteCard = document.querySelector(`[data-note-id="${noteId}"]`);
+      if (noteCard) {
+        const imgElement = noteCard.querySelector('img') as HTMLImageElement;
+        const placeholderElement = noteCard.querySelector('[data-placeholder]') as HTMLElement;
+        
+        if (placeholderElement) {
+          // 隐藏占位符
+          placeholderElement.style.display = 'none';
+        }
+        
+        if (imgElement) {
+          // 显示并更新图片
+          imgElement.style.display = 'block';
+          
+          // 强制重新加载图片（添加时间戳避免缓存）
+          const timestamp = Date.now();
+          const newSrc = newImageUrl.includes('?') 
+            ? `${newImageUrl}&t=${timestamp}`
+            : `${newImageUrl}?t=${timestamp}`;
+          
+          imgElement.src = newSrc;
+          
+          console.log(`🖼️ 强制刷新图片显示 [${noteId}]:`, newSrc);
+        } else {
+          // 如果没有img元素，创建一个新的
+          const imageContainer = noteCard.querySelector('.aspect-\\[3\\/4\\]');
+          if (imageContainer && placeholderElement) {
+            const newImg = document.createElement('img');
+            newImg.src = newImageUrl;
+            newImg.alt = '';
+            newImg.className = 'max-w-full max-h-full object-contain mx-auto';
+            
+            imageContainer.insertBefore(newImg, placeholderElement);
+            
+            console.log(`🆕 创建新图片元素 [${noteId}]:`, newImageUrl);
+          }
+        }
+      }
+    }, delay);
   };
 
   return (
