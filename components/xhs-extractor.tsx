@@ -603,6 +603,11 @@ export default function XHSExtractor() {
     setTimeout(() => {
       fixHistoricalImageUrls(notes);
     }, 500);
+
+    // 启动图片健康检查 - 检测失效的图片链接
+    setTimeout(() => {
+      performImageHealthCheck(notes);
+    }, 1000);
   }, []);
 
   // 批量修复历史数据中的图片URL
@@ -919,11 +924,24 @@ export default function XHSExtractor() {
       console.log('最终URL类型:', typeof finalUrl);
       console.log('最终URL长度:', finalUrl?.length);
       
+      // 生成笔记ID
+      const noteId = generateId();
+      
+      // 尝试下载并保存封面图片
+      let localImageUrl: string | null = null;
+      if (parsedData.cover && parsedData.cover !== '无封面') {
+        setLoadingStage('正在下载封面图片...');
+        localImageUrl = await downloadAndSaveImage(parsedData.cover, noteId);
+      }
+      
+      // 确定最终使用的封面URL（优先使用本地图片）
+      const finalCoverUrl = localImageUrl || parsedData.cover || '';
+      
       // 构造简化的笔记对象
       const simpleNote: SimpleNote = {
-        id: generateId(),
+        id: noteId,
         title: parsedData.title || '未提取到标题',
-        cover: parsedData.cover || '',
+        cover: finalCoverUrl,
         url: finalUrl, // 使用提取的正确URL
         tags: selectedTags,
         extractedAt: new Date().toISOString()
@@ -939,7 +957,11 @@ export default function XHSExtractor() {
         title: simpleNote.title,
         content: '',
         author: { name: '' },
-        images: simpleNote.cover ? [simpleNote.cover] : [],
+        images: finalCoverUrl ? [finalCoverUrl] : [],
+        originalImages: parsedData.cover && parsedData.cover !== '无封面' && !parsedData.cover.startsWith('/api/image-proxy')
+          ? [parsedData.cover] // 保存原始URL
+          : undefined,
+        localImages: localImageUrl ? [localImageUrl] : undefined, // 保存本地图片路径
         tags: simpleNote.tags,
         url: simpleNote.url, // 使用提取的正确URL
         createTime: simpleNote.extractedAt,
@@ -1214,6 +1236,23 @@ export default function XHSExtractor() {
     return processedUrl;
   };
 
+  // 获取最佳图片URL，优先使用本地图片
+  const getImageUrl = (note: SimpleNote): string => {
+    // 检查是否有本地保存的图片
+    const existingNote = StorageManager.getNoteById(note.id);
+    if (existingNote?.localImages && existingNote.localImages[0]) {
+      return existingNote.localImages[0];
+    }
+    
+    // 如果是本地路径，直接返回
+    if (note.cover && note.cover.startsWith('/uploads/')) {
+      return note.cover;
+    }
+    
+    // 回退到代理图片逻辑
+    return getProxyImageUrl(note.cover);
+  };
+
   // 修复历史数据中的图片URL
   const fixImageUrl = (noteId: string, newImageUrl: string) => {
     // 更新localStorage中的数据
@@ -1317,6 +1356,10 @@ export default function XHSExtractor() {
         const existingNote = StorageManager.getNoteById(noteId);
         if (existingNote) {
           existingNote.images[0] = updatedCover;
+          // 保存原始URL（如果不是代理URL）
+          if (!updatedCover.startsWith('/api/image-proxy')) {
+            existingNote.originalImages = [updatedCover];
+          }
           StorageManager.saveNote(existingNote);
           console.log('已更新localStorage');
         }
@@ -1327,7 +1370,7 @@ export default function XHSExtractor() {
         ));
         
         // 立即更新对应的图片元素，强制重新加载
-        forceRefreshImage(note.id, updatedCover, 100);
+        forceRefreshImage(noteId, updatedCover, 100);
         
         console.log(`✅ 单个封面更新成功: ${note.title}`);
         
@@ -1424,7 +1467,7 @@ export default function XHSExtractor() {
 
   // 渲染小红书风格的简化笔记卡片
   const renderNoteCard = (note: SimpleNote) => {
-    const proxyImageUrl = getProxyImageUrl(note.cover);
+    const imageUrl = getImageUrl(note);
     
     return (
       <div 
@@ -1435,22 +1478,31 @@ export default function XHSExtractor() {
       >
         {/* 封面图片 */}
         <div className="relative overflow-hidden aspect-[3/4] w-full bg-gray-100 flex items-center justify-center">
-          {note.cover ? (
+          {imageUrl ? (
             <img
-              src={proxyImageUrl}
+              src={imageUrl}
               alt={note.title}
               className="max-w-full max-h-full object-contain mx-auto"
               onError={(e) => {
                 // 图片加载失败时的处理策略
-                console.error('图片加载失败:', note.cover);
-                console.error('代理URL:', proxyImageUrl);
+                console.error('图片加载失败:', imageUrl);
                 
                 const target = e.target as HTMLImageElement;
+                
+                // 如果是本地图片失败，尝试使用代理URL
+                if (imageUrl.startsWith('/uploads/')) {
+                  const fallbackUrl = getProxyImageUrl(note.cover);
+                  if (fallbackUrl && fallbackUrl !== imageUrl) {
+                    console.log('本地图片失败，尝试代理URL:', fallbackUrl);
+                    target.src = fallbackUrl;
+                    return;
+                  }
+                }
                 
                 // 如果当前使用的不是代理URL，尝试使用代理
                 if (!note.cover.startsWith('/api/image-proxy') && note.cover.includes('xhscdn.com')) {
                   const fallbackUrl = getProxyImageUrl(note.cover);
-                  if (fallbackUrl !== proxyImageUrl) {
+                  if (fallbackUrl !== imageUrl) {
                     console.log('尝试代理URL:', fallbackUrl);
                     target.src = fallbackUrl;
                     
@@ -1480,11 +1532,11 @@ export default function XHSExtractor() {
                 }
               }}
               onLoad={() => {
-                console.log('图片加载成功:', proxyImageUrl);
+                console.log('图片加载成功:', imageUrl);
                 
                 // 如果成功加载了修复后的URL，更新数据
-                if (proxyImageUrl !== note.cover && proxyImageUrl.startsWith('/api/image-proxy')) {
-                  fixImageUrl(note.id, proxyImageUrl);
+                if (imageUrl !== note.cover && imageUrl.startsWith('/api/image-proxy')) {
+                  fixImageUrl(note.id, imageUrl);
                 }
               }}
             />
@@ -1493,7 +1545,7 @@ export default function XHSExtractor() {
           <div 
             data-placeholder="true"
             className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200"
-            style={{ display: note.cover ? 'none' : 'flex' }}
+            style={{ display: imageUrl ? 'none' : 'flex' }}
           >
             <div className="text-center">
               <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -1700,6 +1752,10 @@ export default function XHSExtractor() {
             const existingNote = StorageManager.getNoteById(note.id);
             if (existingNote) {
               existingNote.images[0] = updatedCover;
+              // 保存原始URL（如果不是代理URL）
+              if (!updatedCover.startsWith('/api/image-proxy')) {
+                existingNote.originalImages = [updatedCover];
+              }
               StorageManager.saveNote(existingNote);
             }
             
@@ -1832,6 +1888,470 @@ export default function XHSExtractor() {
     }, delay);
   };
 
+  // 图片健康检查 - 检测并修复失效的图片链接
+  const performImageHealthCheck = async (notes: SimpleNote[]) => {
+    console.log('🔍 开始图片健康检查...');
+    
+    const failedImages: { noteId: string; title: string; imageUrl: string }[] = [];
+    
+    // 检查每个笔记的封面
+    for (const note of notes) {
+      if (note.cover && note.cover.startsWith('/api/image-proxy')) {
+        try {
+          // 尝试加载图片，如果失败则记录
+          const checkResult = await checkImageAvailability(note.cover);
+          if (!checkResult) {
+            failedImages.push({
+              noteId: note.id,
+              title: note.title,
+              imageUrl: note.cover
+            });
+          }
+        } catch (error) {
+          failedImages.push({
+            noteId: note.id,
+            title: note.title,
+            imageUrl: note.cover
+          });
+        }
+      }
+    }
+    
+    if (failedImages.length > 0) {
+      console.log(`⚠️ 发现 ${failedImages.length} 个失效的图片链接`);
+      
+      // 显示检测结果通知
+      setTimeout(() => {
+        const notification = document.createElement('div');
+        notification.innerHTML = `
+          <div style="
+            position: fixed; 
+            top: 80px; 
+            right: 20px; 
+            background: linear-gradient(135deg, #f59e0b, #d97706); 
+            color: white; 
+            padding: 16px 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            z-index: 10000;
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 320px;
+            animation: slideIn 0.3s ease-out;
+          ">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 20px;">⚠️</span>
+              <strong>发现失效封面</strong>
+            </div>
+            <div style="font-size: 14px; opacity: 0.95; margin-bottom: 8px;">
+              检测到 ${failedImages.length} 个封面链接失效
+            </div>
+            <div style="font-size: 12px; opacity: 0.8;">
+              建议点击"📷 刷新封面"重新获取
+            </div>
+          </div>
+          <style>
+            @keyframes slideIn {
+              from { transform: translateX(100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          </style>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // 8秒后自动移除通知
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => {
+              document.body.removeChild(notification);
+            }, 300);
+          }
+        }, 8000);
+      }, 100);
+      
+      // 自动尝试从原始URL重新生成代理URL
+      await autoFixFailedImages(failedImages);
+    } else {
+      console.log('✅ 图片健康检查完成，所有封面正常');
+    }
+  };
+
+  // 检查图片是否可用
+  const checkImageAvailability = (imageUrl: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(true);
+      img.onerror = () => resolve(false);
+      img.src = imageUrl;
+      
+      // 5秒超时
+      setTimeout(() => resolve(false), 5000);
+    });
+  };
+
+  // 自动修复失效的图片
+  const autoFixFailedImages = async (failedImages: { noteId: string; title: string; imageUrl: string }[]) => {
+    console.log('🔧 开始自动修复失效的图片...');
+    
+    let fixedCount = 0;
+    
+    for (const failed of failedImages) {
+      try {
+        const existingNote = StorageManager.getNoteById(failed.noteId);
+        if (!existingNote) continue;
+        
+        let fixedUrl: string | null = null;
+        
+        // 策略1: 如果有原始URL，重新生成代理URL
+        if (existingNote.originalImages && existingNote.originalImages[0]) {
+          const originalUrl = existingNote.originalImages[0];
+          const newProxyUrl = getProxyImageUrl(originalUrl);
+          
+          const isValid = await checkImageAvailability(newProxyUrl);
+          if (isValid) {
+            fixedUrl = newProxyUrl;
+            console.log(`✅ 策略1成功 - 重新生成代理URL: ${failed.title}`);
+          }
+        }
+        
+        // 策略2: 如果策略1失败，且有URL，重新调用API获取最新封面
+        if (!fixedUrl && existingNote.url) {
+          try {
+            console.log(`🔄 策略2 - 重新调用API获取封面: ${failed.title}`);
+            
+            const extractedUrl = extractXHSUrl(existingNote.url);
+            if (extractedUrl && isValidXHSUrl(extractedUrl)) {
+              const response = await fetch('/api/extract', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ url: extractedUrl, quickPreview: true }),
+              });
+              
+              if (response.ok) {
+                const result = await response.json();
+                if (result.success && result.data && result.data.cover && result.data.cover !== '无封面') {
+                  fixedUrl = result.data.cover;
+                  
+                  // 保存新的原始URL
+                  if (fixedUrl && !fixedUrl.startsWith('/api/image-proxy')) {
+                    existingNote.originalImages = [fixedUrl];
+                  }
+                  
+                  console.log(`✅ 策略2成功 - API重新获取: ${failed.title}`);
+                }
+              }
+            }
+          } catch (apiError) {
+            console.warn(`策略2失败: ${failed.title}`, apiError);
+          }
+        }
+        
+        // 如果找到了有效的修复URL，应用修复
+        if (fixedUrl) {
+          // 在这个if块内，fixedUrl已经确认不为null
+          const validFixedUrl = fixedUrl; // TypeScript类型细化
+          
+          // 更新存储
+          existingNote.images[0] = validFixedUrl;
+          StorageManager.saveNote(existingNote);
+          
+          // 更新界面
+          setSavedNotes(prev => prev.map(note => 
+            note.id === failed.noteId ? { ...note, cover: validFixedUrl } : note
+          ));
+          
+          // 强制刷新图片显示
+          forceRefreshImage(failed.noteId, validFixedUrl, fixedCount * 100);
+          
+          fixedCount++;
+          console.log(`✅ 自动修复成功: ${failed.title}`);
+        } else {
+          console.warn(`❌ 所有修复策略都失败: ${failed.title}`);
+        }
+        
+        // 避免请求过于频繁
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+      } catch (error) {
+        console.error(`自动修复失败: ${failed.title}`, error);
+      }
+    }
+    
+    if (fixedCount > 0) {
+      console.log(`🎉 自动修复完成，成功修复 ${fixedCount}/${failedImages.length} 个封面`);
+      
+      // 显示修复结果
+      setTimeout(() => {
+        const notification = document.createElement('div');
+        notification.innerHTML = `
+          <div style="
+            position: fixed; 
+            top: 80px; 
+            right: 20px; 
+            background: linear-gradient(135deg, #10b981, #059669); 
+            color: white; 
+            padding: 16px 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            z-index: 10000;
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 320px;
+            animation: slideIn 0.3s ease-out;
+          ">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 20px;">🔧</span>
+              <strong>自动修复完成</strong>
+            </div>
+            <div style="font-size: 14px; opacity: 0.95;">
+              成功修复 ${fixedCount}/${failedImages.length} 个失效封面
+            </div>
+            ${failedImages.length - fixedCount > 0 ? 
+              `<div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">
+                ${failedImages.length - fixedCount} 个无法自动修复，建议手动刷新
+              </div>` : 
+              `<div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">
+                所有失效封面已恢复显示 ✨
+              </div>`
+            }
+          </div>
+          <style>
+            @keyframes slideIn {
+              from { transform: translateX(100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          </style>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // 播放成功音效
+        playNotificationSound();
+        
+        // 5秒后移除通知
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => {
+              document.body.removeChild(notification);
+            }, 300);
+          }
+        }, 5000);
+      }, 2000);
+    } else {
+      console.log('❌ 无法自动修复任何失效的封面');
+    }
+  };
+
+  // 下载并保存图片到本地
+  const downloadAndSaveImage = async (imageUrl: string, noteId: string): Promise<string | null> => {
+    try {
+      console.log('开始下载并保存图片:', imageUrl);
+      
+      // 调用下载API
+      const response = await fetch('/api/download-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageUrl: imageUrl,
+          noteId: noteId
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('图片下载保存成功:', result.localUrl);
+        return result.localUrl;
+      } else {
+        console.error('图片下载保存失败:', result.error);
+        return null;
+      }
+    } catch (error) {
+      console.error('下载图片时出错:', error);
+      return null;
+    }
+  };
+
+  // 批量下载所有封面到本地
+  const downloadAllCoversToLocal = async () => {
+    if (isRefreshingCovers) return;
+    
+    setIsRefreshingCovers(true);
+    setError(null);
+    
+    try {
+      const allNotes = StorageManager.getAllNotes();
+      
+      // 过滤出需要下载的笔记（还没有本地图片的）
+      const notesToDownload = allNotes.filter(note => 
+        note.images && note.images[0] && 
+        !note.localImages && 
+        !note.images[0].startsWith('/uploads/') &&
+        note.images[0] !== '无封面'
+      );
+      
+      if (notesToDownload.length === 0) {
+        setTimeout(() => {
+          const notification = document.createElement('div');
+          notification.innerHTML = `
+            <div style="
+              position: fixed; 
+              top: 80px; 
+              right: 20px; 
+              background: linear-gradient(135deg, #6b7280, #4b5563); 
+              color: white; 
+              padding: 16px 20px; 
+              border-radius: 12px; 
+              box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+              z-index: 10000;
+              font-family: system-ui, -apple-system, sans-serif;
+              max-width: 320px;
+              animation: slideIn 0.3s ease-out;
+            ">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="font-size: 20px;">✅</span>
+                <strong>检查完成</strong>
+              </div>
+              <div style="font-size: 14px; opacity: 0.95;">
+                所有封面都已保存到本地，无需重新下载
+              </div>
+            </div>
+            <style>
+              @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+              }
+            </style>
+          `;
+          
+          document.body.appendChild(notification);
+          
+          setTimeout(() => {
+            if (notification.parentNode) {
+              notification.style.animation = 'slideIn 0.3s ease-out reverse';
+              setTimeout(() => {
+                document.body.removeChild(notification);
+              }, 300);
+            }
+          }, 3000);
+        }, 100);
+        
+        setIsRefreshingCovers(false);
+        return;
+      }
+      
+      console.log(`💾 开始批量下载 ${notesToDownload.length} 个封面到本地...`);
+      setRefreshProgress({ current: 0, total: notesToDownload.length });
+      
+      const successCount = { value: 0 };
+      const failCount = { value: 0 };
+      
+      // 逐个下载封面
+      for (let i = 0; i < notesToDownload.length; i++) {
+        const note = notesToDownload[i];
+        setRefreshProgress({ current: i + 1, total: notesToDownload.length });
+        
+        try {
+          console.log(`💾 下载封面 (${i + 1}/${notesToDownload.length}): ${note.title}`);
+          
+          const localUrl = await downloadAndSaveImage(note.images[0], note.id);
+          
+          if (localUrl) {
+            // 更新localStorage，添加本地图片路径
+            note.localImages = [localUrl];
+            StorageManager.saveNote(note);
+            
+            // 更新界面状态
+            setSavedNotes(prev => prev.map(n => 
+              n.id === note.id ? { ...n, cover: localUrl } : n
+            ));
+            
+            // 强制刷新图片显示
+            forceRefreshImage(note.id, localUrl, 200 * i);
+            
+            successCount.value++;
+            console.log(`✅ 封面下载成功: ${note.title}`);
+          } else {
+            console.warn(`封面下载失败: ${note.title}`);
+            failCount.value++;
+          }
+          
+          // 避免请求过于频繁
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+        } catch (error) {
+          console.error(`封面下载失败: ${note.title}`, error);
+          failCount.value++;
+        }
+      }
+      
+      // 显示完成通知
+      setTimeout(() => {
+        const notification = document.createElement('div');
+        notification.innerHTML = `
+          <div style="
+            position: fixed; 
+            top: 80px; 
+            right: 20px; 
+            background: linear-gradient(135deg, #10b981, #059669); 
+            color: white; 
+            padding: 16px 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            z-index: 10000;
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 320px;
+            animation: slideIn 0.3s ease-out;
+          ">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 20px;">💾</span>
+              <strong>下载完成</strong>
+            </div>
+            <div style="font-size: 14px; opacity: 0.95; margin-bottom: 4px;">
+              成功下载 ${successCount.value}/${notesToDownload.length} 个封面到本地
+            </div>
+            ${failCount.value > 0 ? `<div style="font-size: 12px; opacity: 0.8;">失败 ${failCount.value} 个</div>` : 
+              `<div style="font-size: 12px; opacity: 0.8;">所有封面已永久保存 🎉</div>`}
+          </div>
+          <style>
+            @keyframes slideIn {
+              from { transform: translateX(100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          </style>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // 播放成功音效
+        playNotificationSound();
+        
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => {
+              document.body.removeChild(notification);
+            }, 300);
+          }
+        }, 5000);
+      }, 500);
+      
+      console.log(`🎉 批量下载完成! 成功: ${successCount.value}, 失败: ${failCount.value}`);
+      
+    } catch (error) {
+      console.error('批量下载过程中出现错误:', error);
+      setError('批量下载失败，请稍后重试');
+    } finally {
+      setIsRefreshingCovers(false);
+      setRefreshProgress({ current: 0, total: 0 });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 全局加载进度条 */}
@@ -1850,7 +2370,7 @@ export default function XHSExtractor() {
                 <div className="animate-spin h-4 w-4 border-2 border-red-500 border-t-transparent rounded-full"></div>
                 <span className="font-medium">
                   {isRefreshingCovers 
-                    ? `正在重新提取封面... (${refreshProgress.current}/${refreshProgress.total})`
+                    ? `正在批量处理... (${refreshProgress.current}/${refreshProgress.total})`
                     : (loadingStage || '正在处理...')
                   }
                 </span>
@@ -1944,6 +2464,25 @@ export default function XHSExtractor() {
                 >
                   <Trash2 className="h-4 w-4 mr-1" />
                   清空收藏
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => performImageHealthCheck(savedNotes)}
+                  className="text-gray-500 hover:text-purple-500"
+                  title="检查图片健康状态"
+                >
+                  🔍 健康检查
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => downloadAllCoversToLocal()}
+                  disabled={isRefreshingCovers}
+                  className="text-gray-500 hover:text-blue-500"
+                  title="下载所有封面到本地"
+                >
+                  💾 本地保存
                 </Button>
               </div>
             </div>

@@ -49,7 +49,17 @@ export interface XHSNote {
 }
 
 // 本地存储类型
-export interface StoredNote extends XHSNote {
+export interface StoredNote {
+  id: string;
+  title: string;
+  content: string;
+  author: { name: string };
+  images: string[];
+  originalImages?: string[]; // 原始图片URL
+  localImages?: string[]; // 本地保存的图片路径
+  tags: string[];
+  url?: string;
+  createTime: string;
   extractedAt: string;
 }
 
