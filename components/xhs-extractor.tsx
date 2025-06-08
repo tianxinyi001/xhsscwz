@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { StorageManager } from '@/lib/storage';
 import { StoredNote } from '@/lib/types';
 import { generateId, isValidXHSUrl, extractXHSUrl } from '@/lib/utils';
+import { ImageCacheManager } from '@/lib/image-cache';
 import { Trash2, ExternalLink, Plus, Tag, X } from 'lucide-react';
 
 interface ApiResponse {
@@ -608,6 +609,11 @@ export default function XHSExtractor() {
     setTimeout(() => {
       performImageHealthCheck(notes);
     }, 1000);
+
+    // 清理过期的浏览器缓存
+    setTimeout(() => {
+      ImageCacheManager.cleanExpiredCache();
+    }, 2000);
   }, []);
 
   // 批量修复历史数据中的图片URL
@@ -927,15 +933,35 @@ export default function XHSExtractor() {
       // 生成笔记ID
       const noteId = generateId();
       
-      // 尝试下载并保存封面图片
+      // 尝试下载并保存封面图片（服务器 + 浏览器缓存）
       let localImageUrl: string | null = null;
+      let cachedImageUrl: string | null = null;
+      
       if (parsedData.cover && parsedData.cover !== '无封面') {
-        setLoadingStage('正在下载封面图片...');
-        localImageUrl = await downloadAndSaveImage(parsedData.cover, noteId);
+        setLoadingStage('正在保存封面图片...');
+        
+        // 并行进行服务器保存和浏览器缓存
+        const [serverResult, cacheResult] = await Promise.allSettled([
+          downloadAndSaveImage(parsedData.cover, noteId),
+          ImageCacheManager.cacheImage(parsedData.cover, noteId)
+        ]);
+        
+        if (serverResult.status === 'fulfilled') {
+          localImageUrl = serverResult.value;
+        }
+        
+        if (cacheResult.status === 'fulfilled') {
+          cachedImageUrl = cacheResult.value;
+        }
+        
+        console.log('图片保存结果:', {
+          server: localImageUrl ? '成功' : '失败',
+          cache: cachedImageUrl ? '成功' : '失败'
+        });
       }
       
-      // 确定最终使用的封面URL（优先使用本地图片）
-      const finalCoverUrl = localImageUrl || parsedData.cover || '';
+      // 确定最终使用的封面URL（优先级：本地服务器 > 浏览器缓存 > 原始链接）
+      const finalCoverUrl = localImageUrl || cachedImageUrl || parsedData.cover || '';
       
       // 构造简化的笔记对象
       const simpleNote: SimpleNote = {
@@ -962,6 +988,7 @@ export default function XHSExtractor() {
           ? [parsedData.cover] // 保存原始URL
           : undefined,
         localImages: localImageUrl ? [localImageUrl] : undefined, // 保存本地图片路径
+        cachedImages: cachedImageUrl ? [cachedImageUrl] : undefined, // 保存浏览器缓存
         tags: simpleNote.tags,
         url: simpleNote.url, // 使用提取的正确URL
         createTime: simpleNote.extractedAt,
@@ -1236,20 +1263,32 @@ export default function XHSExtractor() {
     return processedUrl;
   };
 
-  // 获取最佳图片URL，优先使用本地图片
+  // 获取最佳图片URL，优先使用本地图片，然后是浏览器缓存
   const getImageUrl = (note: SimpleNote): string => {
     // 检查是否有本地保存的图片
     const existingNote = StorageManager.getNoteById(note.id);
+    
+    // 优先级1: 本地服务器图片
     if (existingNote?.localImages && existingNote.localImages[0]) {
       return existingNote.localImages[0];
     }
     
-    // 如果是本地路径，直接返回
+    // 优先级2: 浏览器缓存图片
+    if (existingNote?.cachedImages && existingNote.cachedImages[0]) {
+      return existingNote.cachedImages[0];
+    }
+    
+    // 优先级3: 如果是本地路径，直接返回
     if (note.cover && note.cover.startsWith('/uploads/')) {
       return note.cover;
     }
     
-    // 回退到代理图片逻辑
+    // 优先级4: 如果是Base64数据，直接返回
+    if (note.cover && note.cover.startsWith('data:')) {
+      return note.cover;
+    }
+    
+    // 优先级5: 回退到代理图片逻辑
     return getProxyImageUrl(note.cover);
   };
 
@@ -1318,7 +1357,7 @@ export default function XHSExtractor() {
       `;
       document.body.appendChild(startNotification);
       
-      const extractedUrl = extractXHSUrl(note.url);
+      const extractedUrl = extractXHSUrl(note.url || '');
       console.log('提取的URL:', extractedUrl);
       
       if (!extractedUrl || !isValidXHSUrl(extractedUrl)) {
@@ -1722,7 +1761,7 @@ export default function XHSExtractor() {
           console.log(`📷 重新提取封面 (${i + 1}/${notesToRefresh.length}): ${note.title}`);
           
           // 从URL中提取正确的小红书链接
-          const extractedUrl = extractXHSUrl(note.url);
+          const extractedUrl = extractXHSUrl(note.url || '');
           if (!extractedUrl || !isValidXHSUrl(extractedUrl)) {
             console.warn(`跳过无效URL: ${note.url}`);
             failCount.value++;
@@ -2352,6 +2391,179 @@ export default function XHSExtractor() {
     }
   };
 
+  const cacheAllImagesToBrowser = async () => {
+    if (isRefreshingCovers) return;
+    
+    setIsRefreshingCovers(true);
+    setError(null);
+    
+    try {
+      const allNotes = StorageManager.getAllNotes();
+      
+      // 过滤出需要缓存的笔记（还没有缓存的）
+      const notesToCache = allNotes.filter(note => 
+        note.images && note.images[0] && 
+        !note.cachedImages && 
+        !note.images[0].startsWith('/uploads/') &&
+        note.images[0] !== '无封面'
+      );
+      
+      if (notesToCache.length === 0) {
+        setTimeout(() => {
+          const notification = document.createElement('div');
+          notification.innerHTML = `
+            <div style="
+              position: fixed; 
+              top: 80px; 
+              right: 20px; 
+              background: linear-gradient(135deg, #6b7280, #4b5563); 
+              color: white; 
+              padding: 16px 20px; 
+              border-radius: 12px; 
+              box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+              z-index: 10000;
+              font-family: system-ui, -apple-system, sans-serif;
+              max-width: 320px;
+              animation: slideIn 0.3s ease-out;
+            ">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="font-size: 20px;">✅</span>
+                <strong>检查完成</strong>
+              </div>
+              <div style="font-size: 14px; opacity: 0.95;">
+                所有笔记都已缓存到浏览器，无需重新缓存
+              </div>
+            </div>
+            <style>
+              @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+              }
+            </style>
+          `;
+          
+          document.body.appendChild(notification);
+          
+          setTimeout(() => {
+            if (notification.parentNode) {
+              notification.style.animation = 'slideIn 0.3s ease-out reverse';
+              setTimeout(() => {
+                document.body.removeChild(notification);
+              }, 300);
+            }
+          }, 3000);
+        }, 100);
+        
+        setIsRefreshingCovers(false);
+        return;
+      }
+      
+      console.log(`💽 开始批量缓存 ${notesToCache.length} 个封面到浏览器...`);
+      setRefreshProgress({ current: 0, total: notesToCache.length });
+      
+      const successCount = { value: 0 };
+      const failCount = { value: 0 };
+      
+      // 逐个缓存封面
+      for (let i = 0; i < notesToCache.length; i++) {
+        const note = notesToCache[i];
+        setRefreshProgress({ current: i + 1, total: notesToCache.length });
+        
+        try {
+          console.log(`💽 缓存封面 (${i + 1}/${notesToCache.length}): ${note.title}`);
+          
+          const cachedUrl = await ImageCacheManager.cacheImage(note.images[0], note.id);
+          
+          if (cachedUrl) {
+            // 更新localStorage，添加浏览器缓存路径
+            note.cachedImages = [cachedUrl];
+            StorageManager.saveNote(note);
+            
+            // 更新界面状态
+            setSavedNotes(prev => prev.map(n => 
+              n.id === note.id ? { ...n, cover: cachedUrl } : n
+            ));
+            
+            // 强制刷新图片显示
+            forceRefreshImage(note.id, cachedUrl, 200 * i);
+            
+            successCount.value++;
+            console.log(`✅ 封面缓存成功: ${note.title}`);
+          } else {
+            console.warn(`封面缓存失败: ${note.title}`);
+            failCount.value++;
+          }
+          
+          // 避免请求过于频繁
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+        } catch (error) {
+          console.error(`封面缓存失败: ${note.title}`, error);
+          failCount.value++;
+        }
+      }
+      
+      // 显示完成通知
+      setTimeout(() => {
+        const notification = document.createElement('div');
+        notification.innerHTML = `
+          <div style="
+            position: fixed; 
+            top: 80px; 
+            right: 20px; 
+            background: linear-gradient(135deg, #10b981, #059669); 
+            color: white; 
+            padding: 16px 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            z-index: 10000;
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 320px;
+            animation: slideIn 0.3s ease-out;
+          ">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 20px;">💽</span>
+              <strong>缓存完成</strong>
+            </div>
+            <div style="font-size: 14px; opacity: 0.95; margin-bottom: 4px;">
+              成功缓存 ${successCount.value} 个封面
+            </div>
+            ${failCount.value > 0 ? `<div style="font-size: 12px; opacity: 0.8;">失败 ${failCount.value} 个</div>` : ''}
+          </div>
+          <style>
+            @keyframes slideIn {
+              from { transform: translateX(100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          </style>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // 播放成功音效
+        playNotificationSound();
+        
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => {
+              document.body.removeChild(notification);
+            }, 300);
+          }
+        }, 5000);
+      }, 500);
+      
+      console.log(`🎉 批量缓存完成! 成功: ${successCount.value}, 失败: ${failCount.value}`);
+      
+    } catch (error) {
+      console.error('批量缓存过程中出现错误:', error);
+      setError('批量缓存失败，请稍后重试');
+    } finally {
+      setIsRefreshingCovers(false);
+      setRefreshProgress({ current: 0, total: 0 });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 全局加载进度条 */}
@@ -2483,6 +2695,16 @@ export default function XHSExtractor() {
                   title="下载所有封面到本地"
                 >
                   💾 本地保存
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => cacheAllImagesToBrowser()}
+                  disabled={isRefreshingCovers}
+                  className="text-gray-500 hover:text-purple-500"
+                  title="缓存所有图片到浏览器"
+                >
+                  💽 浏览器缓存
                 </Button>
               </div>
             </div>

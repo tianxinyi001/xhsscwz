@@ -57,6 +57,7 @@ export interface StoredNote {
   images: string[];
   originalImages?: string[]; // 原始图片URL
   localImages?: string[]; // 本地保存的图片路径
+  cachedImages?: string[]; // 浏览器缓存的图片（Base64）
   tags: string[];
   url?: string;
   createTime: string;
