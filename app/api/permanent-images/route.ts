@@ -90,12 +90,15 @@ export async function GET(request: NextRequest) {
     }
 
     // 查找该笔记的所有永久图片
-    const files = await supabase.storage.from(BUCKET).list();
-    const noteImages = files.filter((file: any) => file.name.startsWith(noteId));
+    const { data, error } = await supabase.storage.from(BUCKET).list();
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+    const noteImages = (data || []).filter(file => file.name.startsWith(noteId));
 
     return NextResponse.json({ 
       success: true,
-      images: noteImages.map((file: any) => file.name)
+      images: noteImages.map(file => file.name)
     });
 
   } catch (error) {
