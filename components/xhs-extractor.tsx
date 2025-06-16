@@ -2747,7 +2747,6 @@ export default function XHSExtractor() {
                     }
                   }}
                 />
-                
                 <Button 
                   onClick={handleExtract}
                   disabled={isLoading || !url.trim()}
@@ -2757,11 +2756,33 @@ export default function XHSExtractor() {
                   收藏笔记
                 </Button>
               </div>
-              
               {error && (
                 <p className="text-red-500 text-sm mt-3">{error}</p>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* 顶部导航栏功能按钮 */}
+        <div className="absolute top-6 right-8">
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={refreshMissingCovers}
+              disabled={isRefreshingCovers}
+              className="text-gray-500 hover:text-green-500"
+              title="重新提取丢失的封面"
+            >
+              {isRefreshingCovers ? (
+                <>
+                  <div className="animate-spin h-3 w-3 border border-green-500 border-t-transparent rounded-full mr-1"></div>
+                  📷 提取中 {refreshProgress.current}/{refreshProgress.total}
+                </>
+              ) : (
+                <>📷 刷新封面</>
+              )}
+            </Button>
           </div>
         </div>
 
