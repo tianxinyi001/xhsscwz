@@ -26,9 +26,32 @@ export class ImageCacheManager {
   // 下载并缓存图片到IndexedDB
   static async cacheImage(imageUrl: string, noteId: string): Promise<string | null> {
     try {
-      console.log('开始缓存图片到浏览器:', imageUrl);
+      console.log('开始缓存图片:', imageUrl);
       
-      // 下载图片
+      // 首先尝试从本地获取
+      const localImage = await LocalImageStorage.getLocalImage(noteId);
+      if (localImage) {
+        console.log('从本地获取到图片:', localImage);
+        return localImage;
+      }
+
+      // 如果本地没有，则保存到本地
+      const savedImageUrl = await LocalImageStorage.saveImageLocally(imageUrl, noteId);
+      console.log('图片已保存到本地:', savedImageUrl);
+
+      // 同时保存到浏览器缓存
+      const base64 = await this.cacheToBrowser(imageUrl, noteId);
+      
+      return savedImageUrl;
+    } catch (error) {
+      console.error('缓存图片失败:', error);
+      return null;
+    }
+  }
+
+  // 新增：仅缓存到浏览器的方法
+  private static async cacheToBrowser(imageUrl: string, noteId: string): Promise<string | null> {
+    try {
       const response = await fetch(imageUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -41,11 +64,8 @@ export class ImageCacheManager {
       }
 
       const blob = await response.blob();
-      
-      // 转换为Base64
       const base64 = await this.blobToBase64(blob);
       
-      // 保存到IndexedDB
       const db = await this.initDB();
       const transaction = db.transaction([this.storeName], 'readwrite');
       const store = transaction.objectStore(this.storeName);
@@ -66,11 +86,7 @@ export class ImageCacheManager {
         request.onerror = () => reject(request.error);
       });
       
-      console.log('图片已缓存到浏览器:', imageData.id);
-      
-      // 返回Base64数据URL
       return base64;
-      
     } catch (error) {
       console.error('缓存图片到浏览器失败:', error);
       return null;
@@ -187,5 +203,62 @@ export class ImageCacheManager {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  }
+}
+
+// 本地图片存储服务
+export class LocalImageStorage {
+  static async saveImageLocally(imageUrl: string, noteId: string): Promise<string> {
+    try {
+      // 下载图片
+      const response = await fetch(imageUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://www.xiaohongshu.com/',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`图片下载失败: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      
+      // 创建FormData
+      const formData = new FormData();
+      formData.append('image', blob, `${noteId}.jpg`);
+      formData.append('noteId', noteId);
+
+      // 保存到本地
+      const saveResponse = await fetch('/api/local-images/save', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!saveResponse.ok) {
+        throw new Error(`图片保存失败: ${saveResponse.status}`);
+      }
+
+      const result = await saveResponse.json();
+      return result.imageUrl;
+    } catch (error) {
+      console.error('保存图片到本地失败:', error);
+      throw error;
+    }
+  }
+
+  // 获取本地图片
+  static async getLocalImage(noteId: string): Promise<string | null> {
+    try {
+      const response = await fetch(`/api/local-images/${noteId}`);
+      if (!response.ok) {
+        return null;
+      }
+      const data = await response.json();
+      return data.imageUrl;
+    } catch (error) {
+      console.error('获取本地图片失败:', error);
+      return null;
+    }
   }
 } 

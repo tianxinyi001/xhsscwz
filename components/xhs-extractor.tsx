@@ -937,31 +937,35 @@ export default function XHSExtractor() {
       let localImageUrl: string | null = null;
       let cachedImageUrl: string | null = null;
       
+      let permanentUrl: string | null = null;
       if (parsedData.cover && parsedData.cover !== '无封面') {
         setLoadingStage('正在保存封面图片...');
-        
-        // 并行进行服务器保存和浏览器缓存
-        const [serverResult, cacheResult] = await Promise.allSettled([
-          downloadAndSaveImage(parsedData.cover, noteId),
-          ImageCacheManager.cacheImage(parsedData.cover, noteId)
-        ]);
-        
-        if (serverResult.status === 'fulfilled') {
-          localImageUrl = serverResult.value;
+        let realImageUrl = parsedData.cover;
+        if (realImageUrl.startsWith('/api/image-proxy')) {
+          const urlParams = new URLSearchParams(realImageUrl.split('?')[1]);
+          realImageUrl = urlParams.get('url') || realImageUrl;
         }
-        
-        if (cacheResult.status === 'fulfilled') {
-          cachedImageUrl = cacheResult.value;
+        permanentUrl = await downloadAndSaveImage(realImageUrl, noteId);
+        if (permanentUrl) {
+          // 更新localStorage，添加永久图片路径
+          const existingNote = StorageManager.getNoteById(noteId);
+          if (existingNote) {
+            existingNote.permanentImages = [permanentUrl];
+            StorageManager.saveNote(existingNote);
+          }
+          setSavedNotes(prev => [
+            { ...simpleNote, cover: finalCoverUrl },
+            ...prev
+          ]);
+          forceRefreshImage(noteId, permanentUrl);
+          console.log('✅ 封面已保存到永久存储:', permanentUrl);
+        } else {
+          console.warn('❌ 封面保存到永久存储失败');
         }
-        
-        console.log('图片保存结果:', {
-          server: localImageUrl ? '成功' : '失败',
-          cache: cachedImageUrl ? '成功' : '失败'
-        });
       }
       
-      // 确定最终使用的封面URL（优先级：本地服务器 > 浏览器缓存 > 原始链接）
-      const finalCoverUrl = localImageUrl || cachedImageUrl || parsedData.cover || '';
+      // 收藏时直接用永久封面
+      const finalCoverUrl = permanentUrl ? permanentUrl : '';
       
       // 构造简化的笔记对象
       const simpleNote: SimpleNote = {
@@ -987,8 +991,7 @@ export default function XHSExtractor() {
         originalImages: parsedData.cover && parsedData.cover !== '无封面' && !parsedData.cover.startsWith('/api/image-proxy')
           ? [parsedData.cover] // 保存原始URL
           : undefined,
-        localImages: localImageUrl ? [localImageUrl] : undefined, // 保存本地图片路径
-        cachedImages: cachedImageUrl ? [cachedImageUrl] : undefined, // 保存浏览器缓存
+        permanentImages: permanentUrl ? [permanentUrl] : undefined,
         tags: simpleNote.tags,
         url: simpleNote.url, // 使用提取的正确URL
         createTime: simpleNote.extractedAt,
@@ -999,17 +1002,19 @@ export default function XHSExtractor() {
       
       setLoadingStage('收藏成功！');
       
-      // 更新状态
-      setSavedNotes(prev => [simpleNote, ...prev]);
-      
-      // 清除输入
+      // 收藏后直接从 localStorage 重新加载所有笔记，避免重复
+      const notes = StorageManager.getAllNotes().map(note => ({
+        id: note.id,
+        title: note.title,
+        cover: note.images[0] || '',
+        url: note.url || '',
+        tags: note.tags || [],
+        extractedAt: note.extractedAt
+      }));
+      setSavedNotes(notes);
       setUrl('');
       setPendingNoteData(null);
-      
-      // 播放提示音
       playNotificationSound();
-      
-      // 延迟一点时间显示成功状态
       await new Promise(resolve => setTimeout(resolve, 800));
       
     } catch (err) {
@@ -1265,30 +1270,35 @@ export default function XHSExtractor() {
 
   // 获取最佳图片URL，优先使用本地图片，然后是浏览器缓存
   const getImageUrl = (note: SimpleNote): string => {
-    // 检查是否有本地保存的图片
+    // 检查是否有永久存储的图片
     const existingNote = StorageManager.getNoteById(note.id);
     
-    // 优先级1: 本地服务器图片
+    // 优先级1: 永久存储图片
+    if (existingNote?.permanentImages && existingNote.permanentImages[0]) {
+      return existingNote.permanentImages[0];
+    }
+    
+    // 优先级2: 本地服务器图片
     if (existingNote?.localImages && existingNote.localImages[0]) {
       return existingNote.localImages[0];
     }
     
-    // 优先级2: 浏览器缓存图片
+    // 优先级3: 浏览器缓存图片
     if (existingNote?.cachedImages && existingNote.cachedImages[0]) {
       return existingNote.cachedImages[0];
     }
     
-    // 优先级3: 如果是本地路径，直接返回
-    if (note.cover && note.cover.startsWith('/uploads/')) {
+    // 优先级4: 如果是本地路径，直接返回
+    if (note.cover && note.cover.startsWith('/permanent-images/')) {
       return note.cover;
     }
     
-    // 优先级4: 如果是Base64数据，直接返回
+    // 优先级5: 如果是Base64数据，直接返回
     if (note.cover && note.cover.startsWith('data:')) {
       return note.cover;
     }
     
-    // 优先级5: 回退到代理图片逻辑
+    // 优先级6: 回退到代理图片逻辑
     return getProxyImageUrl(note.cover);
   };
 
@@ -2184,37 +2194,42 @@ export default function XHSExtractor() {
     }
   };
 
-  // 下载并保存图片到本地
-  const downloadAndSaveImage = async (imageUrl: string, noteId: string): Promise<string | null> => {
+  // 下载并保存图片到永久存储
+  async function downloadAndSaveImage(imageUrl: string, noteId: string): Promise<string | null> {
     try {
-      console.log('开始下载并保存图片:', imageUrl);
+      console.log('开始保存图片到永久存储:', { imageUrl, noteId });
       
-      // 调用下载API
-      const response = await fetch('/api/download-image', {
+      const response: Response = await fetch('/api/permanent-images', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          imageUrl: imageUrl,
-          noteId: noteId
-        }),
+        body: JSON.stringify({ imageUrl, noteId }),
       });
+
+      console.log('收到服务器响应:', response.status);
       
-      const result = await response.json();
-      
-      if (result.success) {
-        console.log('图片下载保存成功:', result.localUrl);
-        return result.localUrl;
-      } else {
-        console.error('图片下载保存失败:', result.error);
-        return null;
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('保存图片失败:', { status: response.status, error: errorText });
+        throw new Error(`保存图片失败: ${response.status}`);
       }
+
+      const result = await response.json();
+      console.log('服务器返回结果:', result);
+      
+      if (!result.success) {
+        console.error('保存图片失败:', result.error);
+        throw new Error(result.error || '保存图片失败');
+      }
+
+      console.log('图片保存成功:', result.imageUrl);
+      return result.imageUrl;
     } catch (error) {
-      console.error('下载图片时出错:', error);
+      console.error('保存图片失败:', error);
       return null;
     }
-  };
+  }
 
   // 批量下载所有封面到本地
   const downloadAllCoversToLocal = async () => {
