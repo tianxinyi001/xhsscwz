@@ -55,10 +55,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    // 获取公开访问 URL
+    // 获取公开访问 URL（Public bucket）
     const { data: publicUrlData } = supabase.storage.from(BUCKET).getPublicUrl(filename);
     const publicUrl = publicUrlData?.publicUrl;
-
     if (!publicUrl) {
       return NextResponse.json({ success: false, error: '获取公开URL失败' }, { status: 500 });
     }
