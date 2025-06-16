@@ -107,4 +107,22 @@ export async function GET(request: NextRequest) {
       error: error instanceof Error ? error.message : '获取图片失败'
     }, { status: 500 });
   }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { filename } = await request.json();
+    if (!filename) {
+      return NextResponse.json({ success: false, error: '缺少图片文件名' }, { status: 400 });
+    }
+
+    const { error } = await supabase.storage.from(BUCKET).remove([filename]);
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : '删除失败' }, { status: 500 });
+  }
 } 

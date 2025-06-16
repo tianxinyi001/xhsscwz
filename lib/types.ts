@@ -59,6 +59,7 @@ export interface StoredNote {
   localImages?: string[]; // 本地保存的图片路径
   cachedImages?: string[]; // 浏览器缓存的图片（Base64）
   permanentImages?: string[]; // 永久存储的图片路径
+  filename?: string; // Supabase 图片文件名
   tags: string[];
   url?: string;
   createTime: string;

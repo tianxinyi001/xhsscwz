@@ -1039,12 +1039,26 @@ export default function XHSExtractor() {
   };
 
   // 确认删除
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deletingNote) {
+      // 获取 filename（假设保存在 deletingNote.filename）
+      const existingNote = StorageManager.getNoteById(deletingNote.id);
+      const filename = existingNote?.filename;
+      // 删除 Supabase Storage 图片
+      if (filename) {
+        try {
+          await fetch('/api/permanent-images', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename }),
+          });
+        } catch (e) {
+          console.warn('删除图片时出错', e);
+        }
+      }
+      // 删除本地笔记
       StorageManager.deleteNote(deletingNote.id);
       setSavedNotes(prev => prev.filter(note => note.id !== deletingNote.id));
-      
-      // 播放提示音
       playDeleteSound();
     }
     setShowDeleteModal(false);
