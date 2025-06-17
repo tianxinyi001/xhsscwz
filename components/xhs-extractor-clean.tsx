@@ -320,27 +320,71 @@ export default function XHSExtractor() {
 
     try {
       const extractedUrl = extractXHSUrl(url);
-      const cozeClient = new CozeClient();
       
       setLoadingStage('正在分析链接内容...');
-      const response = await cozeClient.extractXHSInfo(extractedUrl);
+      
+      // 首先尝试使用 Coze API
+      const response = await fetch('/api/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          url: extractedUrl,
+          quickPreview: false 
+        }),
+      });
+
+      console.log('API 响应状态:', response.status);
+      const result = await response.json();
+      console.log('API 响应数据:', result);
       
       setLoadingStage('正在解析提取结果...');
-      const noteData = cozeClient.parseXHSResponse(response);
       
-      if (noteData && noteData.title && noteData.title !== '未提取到标题') {
-        setCurrentNote({
-          ...noteData,
-          url: extractedUrl,
-          extractedAt: new Date().toISOString()
-        });
-        setShowTagSelection(true);
+      // 检查是否成功或者是降级响应
+      if (result.success || result.fallback) {
+        const noteData = result.data;
+        
+        if (noteData && noteData.title && noteData.title !== '未提取到标题') {
+          setCurrentNote({
+            ...noteData,
+            url: extractedUrl,
+            extractedAt: new Date().toISOString()
+          });
+          setShowTagSelection(true);
+        } else if (result.fallback) {
+          // 降级模式：让用户手动输入信息
+          const fallbackNote = {
+            title: `来自小红书的笔记 - ${new Date().toLocaleDateString()}`,
+            content: '智能提取暂时不可用，您可以手动添加标签进行收藏',
+            cover: '无封面',
+            author: '未知作者',
+            images: [],
+            url: extractedUrl,
+            extractedAt: new Date().toISOString(),
+            fallback: true
+          };
+          
+          setCurrentNote(fallbackNote);
+          setError('⚠️ 智能提取暂时不可用，但您仍可以收藏此链接');
+          setShowTagSelection(true);
+        } else {
+          throw new Error(result.error || '未能成功提取笔记信息');
+        }
       } else {
-        throw new Error('未能成功提取笔记信息');
+        throw new Error(result.error || result.details || '提取失败');
       }
     } catch (error) {
       console.error('提取失败:', error);
-      setError(error instanceof Error ? error.message : '提取失败，请稍后重试');
+      
+      // 检查是否是网络错误
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        setError('网络连接失败，请检查网络后重试');
+      } else if (error instanceof Error && error.message.includes('500')) {
+        setError('服务器暂时不可用，请稍后重试');
+      } else {
+        setError(error instanceof Error ? error.message : '提取失败，请稍后重试');
+      }
     } finally {
       setIsLoading(false);
       setLoadingStage('');
