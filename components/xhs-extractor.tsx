@@ -7,6 +7,7 @@ import { StorageManager } from '@/lib/storage';
 import { StoredNote } from '@/lib/types';
 import { generateId, isValidXHSUrl, extractXHSUrl } from '@/lib/utils';
 import { ImageCacheManager } from '@/lib/image-cache';
+import { deleteSupabaseImage } from '@/lib/supabase';
 import { Trash2, ExternalLink, Plus, Tag, X } from 'lucide-react';
 
 interface ApiResponse {
@@ -23,6 +24,7 @@ interface SimpleNote {
   url: string;
   tags: string[];
   extractedAt: string;
+  filename?: string; // Supabase 图片文件名
 }
 
 // 标签选择弹窗组件
@@ -552,254 +554,246 @@ function DataManagementModal({
 
 export default function XHSExtractor() {
   const [url, setUrl] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingStage, setLoadingStage] = useState(''); // 新增：加载阶段状态
   const [savedNotes, setSavedNotes] = useState<SimpleNote[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  
-  // 标签相关状态
   const [allTags, setAllTags] = useState<string[]>([]);
-  const [filterTag, setFilterTag] = useState<string | null>(null);
-  
-  // 弹窗状态
-  const [showTagModal, setShowTagModal] = useState(false);
-  const [pendingNoteData, setPendingNoteData] = useState<any>(null);
-  
-  // 标签编辑状态
-  const [showTagEditModal, setShowTagEditModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState('');
+  const [currentNote, setCurrentNote] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showTagSelection, setShowTagSelection] = useState(false);
+  const [showTagEdit, setShowTagEdit] = useState(false);
   const [editingNote, setEditingNote] = useState<SimpleNote | null>(null);
-
-  // 删除确认状态
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingNote, setDeletingNote] = useState<SimpleNote | null>(null);
-
-  // 清空确认状态
-  const [showClearAllModal, setShowClearAllModal] = useState(false);
-
-  // 数据导出/导入相关状态
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [showDataManagement, setShowDataManagement] = useState(false);
-
-  // 重新提取封面相关状态
+  const [refreshingSingleId, setRefreshingSingleId] = useState<string | null>(null);
   const [isRefreshingCovers, setIsRefreshingCovers] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState({ current: 0, total: 0 });
-  const [refreshingSingleId, setRefreshingSingleId] = useState<string | null>(null);
 
-  // 在客户端初始化时加载数据
+  // 加载保存的笔记
   useEffect(() => {
-    const notes = StorageManager.getAllNotes().map(note => ({
+    const notes = StorageManager.getAllNotes();
+    const simpleNotes: SimpleNote[] = notes.map(note => ({
       id: note.id,
       title: note.title,
-      cover: note.images[0] || '',
+      cover: getImageUrl(note),
       url: note.url || '',
-      tags: note.tags || [],
-      extractedAt: note.extractedAt
+      tags: note.tags,
+      extractedAt: note.extractedAt,
+      filename: note.filename // 保存Supabase文件名
     }));
-    setSavedNotes(notes);
+    setSavedNotes(simpleNotes);
     
-    // 提取所有已存在的标签
-    const existingTags = Array.from(new Set(notes.flatMap(note => note.tags)));
-    setAllTags(existingTags);
-    
-    // 批量修复历史数据中的图片URL - 延迟执行以确保界面已渲染
-    setTimeout(() => {
-      fixHistoricalImageUrls(notes);
-    }, 500);
-
-    // 启动图片健康检查 - 检测失效的图片链接
-    setTimeout(() => {
-      performImageHealthCheck(notes);
-    }, 1000);
-
-    // 清理过期的浏览器缓存
-    setTimeout(() => {
-      ImageCacheManager.cleanExpiredCache();
-    }, 2000);
+    // 提取所有唯一标签
+    const tags = [...new Set(notes.flatMap(note => note.tags))];
+    setAllTags(tags);
   }, []);
 
-  // 批量修复历史数据中的图片URL
-  const fixHistoricalImageUrls = (notes: SimpleNote[]) => {
+  // 获取图片URL的优先级逻辑
+  const getImageUrl = (note: StoredNote): string => {
+    // 1. 永久存储的图片（Supabase）
+    if (note.permanentImages && note.permanentImages.length > 0) {
+      return note.permanentImages[0];
+    }
+    
+    // 2. 本地保存的图片
+    if (note.localImages && note.localImages.length > 0) {
+      return note.localImages[0];
+    }
+    
+    // 3. 浏览器缓存的图片
+    if (note.cachedImages && note.cachedImages.length > 0) {
+      return note.cachedImages[0];
+    }
+    
+    // 4. 代理图片
+    if (note.images && note.images.length > 0) {
+      return getProxyImageUrl(note.images[0]);
+    }
+    
+    // 5. 原始图片（作为最后选择）
+    if (note.originalImages && note.originalImages.length > 0) {
+      return note.originalImages[0];
+    }
+    
+    return '无封面';
+  };
+
+  const getProxyImageUrl = (originalUrl: string): string => {
+    if (!originalUrl || originalUrl === '无封面') return '无封面';
+    
+    // 如果已经是代理URL，直接返回
+    if (originalUrl.includes('/api/image-proxy')) {
+      return originalUrl;
+    }
+    
+    // 如果是永久存储或本地图片，直接返回
+    if (originalUrl.startsWith('data:') || 
+        originalUrl.includes('supabase') || 
+        originalUrl.includes('/permanent-images/')) {
+      return originalUrl;
+    }
+    
+    // 其他情况使用代理
+    return `/api/image-proxy?url=${encodeURIComponent(originalUrl)}`;
+  };
+
+  // 删除确认处理
+  const handleConfirmDelete = async () => {
+    if (!deletingNote) return;
+
     try {
-      let hasUpdates = false;
-      const fixedNotes: { title: string; originalUrl: string; fixedUrl: string }[] = [];
+      // 获取完整的笔记信息以获取文件名
+      const fullNote = StorageManager.getNoteById(deletingNote.id);
       
-      console.log('🔧 开始检查需要修复的图片URL...');
-      
-      notes.forEach(note => {
-        try {
-          if (note.cover && note.cover.includes('xhscdn.com')) {
-            let needsFix = false;
-            let fixedUrl = note.cover;
-            
-            // 检查是否需要修复
-            if (!note.cover.startsWith('/api/image-proxy')) {
-              needsFix = true;
-              
-              // 确保使用HTTPS
-              if (fixedUrl.startsWith('http://')) {
-                fixedUrl = fixedUrl.replace('http://', 'https://');
-              }
-              
-              // 转换为代理URL
-              fixedUrl = `/api/image-proxy?url=${encodeURIComponent(fixedUrl)}`;
-            }
-            
-            if (needsFix) {
-              // 更新localStorage中的数据
-              const existingNote = StorageManager.getNoteById(note.id);
-              if (existingNote && existingNote.images && existingNote.images.length > 0) {
-                const originalImageUrl = existingNote.images[0];
-                existingNote.images[0] = fixedUrl;
-                StorageManager.saveNote(existingNote);
-                
-                // 标记需要更新界面
-                hasUpdates = true;
-                note.cover = fixedUrl;
-                
-                fixedNotes.push({
-                  title: note.title,
-                  originalUrl: originalImageUrl,
-                  fixedUrl: fixedUrl
-                });
-                
-                console.log(`✅ 修复: ${note.title}`, {
-                  原始: originalImageUrl,
-                  修复后: fixedUrl.substring(0, 80) + '...'
-                });
-              }
-            }
-          }
-        } catch (noteError) {
-          console.error(`修复笔记失败: ${note.title}`, noteError);
-        }
-      });
-      
-      // 如果有更新，刷新界面并提示用户
-      if (hasUpdates) {
-        setSavedNotes([...notes]);
-        console.log(`🎉 批量修复完成！已修复 ${fixedNotes.length} 篇笔记的图片显示问题`);
+      // 如果有Supabase存储的图片文件名，尝试删除
+      if (fullNote?.filename) {
+        console.log('正在删除 Supabase 图片:', fullNote.filename);
+        const deleteSuccess = await deleteSupabaseImage(fullNote.filename);
         
-        // 显示详细的修复报告
-        console.group('📋 详细修复报告');
-        fixedNotes.forEach((item, index) => {
-          console.log(`${index + 1}. ${item.title.substring(0, 30)}...`);
-        });
-        console.groupEnd();
-        
-        // 显示用户友好的通知
-        setTimeout(() => {
-          const notification = document.createElement('div');
-          notification.innerHTML = `
-            <div style="
-              position: fixed; 
-              top: 80px; 
-              right: 20px; 
-              background: linear-gradient(135deg, #4ade80, #22c55e); 
-              color: white; 
-              padding: 16px 20px; 
-              border-radius: 12px; 
-              box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-              z-index: 10000;
-              font-family: system-ui, -apple-system, sans-serif;
-              max-width: 320px;
-              animation: slideIn 0.3s ease-out;
-            ">
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="font-size: 20px;">🔧</span>
-                <strong>图片修复完成</strong>
-              </div>
-              <div style="font-size: 14px; opacity: 0.95;">
-                成功修复 ${fixedNotes.length} 篇笔记的封面显示问题
-              </div>
-              <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">
-                现在所有图片都能正常显示了 ✨
-              </div>
-            </div>
-            <style>
-              @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-              }
-            </style>
-          `;
-          
-          document.body.appendChild(notification);
-          
-          // 播放成功音效
-          playNotificationSound();
-          
-          // 5秒后自动移除通知
-          setTimeout(() => {
-            if (notification.parentNode) {
-              notification.style.animation = 'slideIn 0.3s ease-out reverse';
-              setTimeout(() => {
-                document.body.removeChild(notification);
-              }, 300);
-            }
-          }, 5000);
-        }, 1000);
-        
-      } else {
-        console.log('✅ 图片URL检查完成，无需修复');
-        
-        // 如果是手动触发的修复，显示提示
-        if (notes.length > 0) {
-          setTimeout(() => {
-            const notification = document.createElement('div');
-            notification.innerHTML = `
-              <div style="
-                position: fixed; 
-                top: 80px; 
-                right: 20px; 
-                background: linear-gradient(135deg, #6b7280, #4b5563); 
-                color: white; 
-                padding: 16px 20px; 
-                border-radius: 12px; 
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-                z-index: 10000;
-                font-family: system-ui, -apple-system, sans-serif;
-                max-width: 320px;
-                animation: slideIn 0.3s ease-out;
-              ">
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                  <span style="font-size: 20px;">✅</span>
-                  <strong>检查完成</strong>
-                </div>
-                <div style="font-size: 14px; opacity: 0.95;">
-                  所有图片URL都已经是最新格式，无需修复
-                </div>
-              </div>
-              <style>
-                @keyframes slideIn {
-                  from { transform: translateX(100%); opacity: 0; }
-                  to { transform: translateX(0); opacity: 1; }
-                }
-              </style>
-            `;
-            
-            document.body.appendChild(notification);
-            
-            // 3秒后自动移除通知
-            setTimeout(() => {
-              if (notification.parentNode) {
-                notification.style.animation = 'slideIn 0.3s ease-out reverse';
-                setTimeout(() => {
-                  document.body.removeChild(notification);
-                }, 300);
-              }
-            }, 3000);
-          }, 100);
+        if (deleteSuccess) {
+          console.log('✅ Supabase 图片删除成功');
+        } else {
+          console.warn('⚠️ Supabase 图片删除失败，但继续删除笔记记录');
         }
       }
+
+      // 从本地存储删除笔记
+      StorageManager.deleteNote(deletingNote.id);
+      
+      // 重新加载笔记列表
+      const notes = StorageManager.getAllNotes();
+      const simpleNotes: SimpleNote[] = notes.map(note => ({
+        id: note.id,
+        title: note.title,
+        cover: getImageUrl(note),
+        url: note.url || '',
+        tags: note.tags,
+        extractedAt: note.extractedAt,
+        filename: note.filename
+      }));
+      setSavedNotes(simpleNotes);
+      
+      // 更新标签列表
+      const tags = [...new Set(notes.flatMap(note => note.tags))];
+      setAllTags(tags);
+
+      // 播放删除音效
+      playDeleteSound();
+      
+      console.log('✅ 笔记删除成功');
     } catch (error) {
-      console.error('批量修复过程中出现错误:', error);
-      setError('图片修复过程中出现错误，请稍后重试');
+      console.error('删除笔记失败:', error);
+      setError('删除笔记失败，请稍后重试');
+    } finally {
+      setShowDeleteConfirm(false);
+      setDeletingNote(null);
     }
   };
 
-  // 创建新标签
-  const handleCreateTag = (tag: string) => {
-    if (!allTags.includes(tag)) {
-      setAllTags(prev => [...prev, tag]);
+  // 保存笔记的处理函数
+  const handleConfirmSave = async (selectedTags: string[]) => {
+    if (!currentNote) return;
+
+    setLoadingStage('正在保存到永久存储...');
+    
+    try {
+      const noteId = generateId();
+      
+      // 1. 首先尝试保存封面图片到永久存储
+      let permanentImageUrl = null;
+      let filename = null;
+      
+      if (currentNote.cover && currentNote.cover !== '无封面') {
+        try {
+          console.log('开始保存封面到永久存储:', currentNote.cover);
+          
+          // 确保传递的是绝对URL
+          let imageUrlToSave = currentNote.cover;
+          
+          // 如果是代理URL，需要提取原始URL
+          if (imageUrlToSave.includes('/api/image-proxy?url=')) {
+            const urlParam = new URL(imageUrlToSave, window.location.origin).searchParams.get('url');
+            if (urlParam) {
+              imageUrlToSave = decodeURIComponent(urlParam);
+            }
+          }
+          
+          const response = await fetch('/api/permanent-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageUrl: imageUrlToSave,
+              noteId: noteId
+            })
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            permanentImageUrl = result.imageUrl;
+            filename = result.filename;
+            console.log('✅ 封面保存到永久存储成功:', permanentImageUrl);
+          } else {
+            console.warn('永久存储失败:', result.error);
+          }
+        } catch (error) {
+          console.error('保存到永久存储失败:', error);
+        }
+      }
+
+      // 2. 创建并保存笔记
+      const noteToSave: StoredNote = {
+        id: noteId,
+        title: currentNote.title,
+        content: currentNote.content || '',
+        author: { name: currentNote.author || '未知作者' },
+        images: currentNote.images || [currentNote.cover],
+        originalImages: currentNote.images || [currentNote.cover],
+        permanentImages: permanentImageUrl ? [permanentImageUrl] : undefined,
+        filename: filename || undefined, // 保存Supabase文件名
+        tags: selectedTags,
+        url: currentNote.url,
+        createTime: currentNote.createTime || new Date().toISOString(),
+        extractedAt: new Date().toISOString()
+      };
+
+      StorageManager.saveNote(noteToSave);
+
+      // 3. 重新加载并更新状态
+      const notes = StorageManager.getAllNotes();
+      const simpleNotes: SimpleNote[] = notes.map(note => ({
+        id: note.id,
+        title: note.title,
+        cover: getImageUrl(note),
+        url: note.url || '',
+        tags: note.tags,
+        extractedAt: note.extractedAt,
+        filename: note.filename
+      }));
+      setSavedNotes(simpleNotes);
+      
+      // 更新标签
+      const uniqueTags = [...new Set([...allTags, ...selectedTags])];
+      setAllTags(uniqueTags);
+
+      // 重置状态
+      setCurrentNote(null);
+      setUrl('');
+      setShowTagSelection(false);
+
+      // 播放成功音效
+      playNotificationSound();
+
+      console.log('✅ 笔记收藏成功!');
+      
+    } catch (error) {
+      console.error('保存笔记失败:', error);
+      setError('保存笔记失败，请稍后重试');
+    } finally {
+      setIsLoading(false);
+      setLoadingStage('');
     }
   };
 
@@ -881,651 +875,7 @@ export default function XHSExtractor() {
     }
 
     // 立即显示标签选择弹窗
-    setShowTagModal(true);
-  };
-
-  // 确认收藏笔记 - 在用户选择标签后执行提取
-  const handleConfirmSave = async (selectedTags: string[]) => {
-    setIsLoading(true);
-    setLoadingStage('正在解析链接...');
-    setError(null);
-    setShowTagModal(false);
-
-    try {
-      // 从用户输入中提取正确的URL
-      const extractedUrl = extractXHSUrl(url);
-      console.log('用户输入:', url);
-      console.log('提取的URL:', extractedUrl);
-      console.log('提取的URL类型:', typeof extractedUrl);
-      console.log('提取的URL长度:', extractedUrl?.length);
-
-      setLoadingStage('正在获取笔记信息...');
-
-      const response = await fetch('/api/extract', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url: extractedUrl, quickPreview: true }),
-      });
-
-      setLoadingStage('正在处理数据...');
-
-      const result: ApiResponse = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || '提取失败');
-      }
-
-      console.log('API完整响应:', result);
-      const parsedData = result.data;
-      console.log('解析的数据:', parsedData);
-      
-      setLoadingStage('正在保存笔记...');
-      
-      // 使用提取的正确URL
-      const finalUrl = extractedUrl;
-      
-      console.log('最终使用的URL:', finalUrl);
-      console.log('最终URL类型:', typeof finalUrl);
-      console.log('最终URL长度:', finalUrl?.length);
-      
-      // 生成笔记ID
-      const noteId = generateId();
-      
-      // 尝试下载并保存封面图片（服务器 + 浏览器缓存）
-      let localImageUrl: string | null = null;
-      let cachedImageUrl: string | null = null;
-      
-      let permanentUrl: string | null = null;
-      if (parsedData.cover && parsedData.cover !== '无封面') {
-        setLoadingStage('正在保存封面图片...');
-        let realImageUrl = parsedData.cover;
-        if (realImageUrl.startsWith('/api/image-proxy')) {
-          const urlParams = new URLSearchParams(realImageUrl.split('?')[1]);
-          realImageUrl = urlParams.get('url') || realImageUrl;
-        }
-        permanentUrl = await downloadAndSaveImage(realImageUrl, noteId);
-        if (permanentUrl) {
-          // 更新localStorage，添加永久图片路径
-          const existingNote = StorageManager.getNoteById(noteId);
-          if (existingNote) {
-            existingNote.permanentImages = [permanentUrl];
-            StorageManager.saveNote(existingNote);
-          }
-          setSavedNotes(prev => [
-            { ...simpleNote, cover: finalCoverUrl },
-            ...prev
-          ]);
-          forceRefreshImage(noteId, permanentUrl);
-          console.log('✅ 封面已保存到永久存储:', permanentUrl);
-        } else {
-          console.warn('❌ 封面保存到永久存储失败');
-        }
-      }
-      
-      // 收藏时直接用永久封面
-      const finalCoverUrl = permanentUrl ? permanentUrl : '';
-      
-      // 构造简化的笔记对象
-      const simpleNote: SimpleNote = {
-        id: noteId,
-        title: parsedData.title || '未提取到标题',
-        cover: finalCoverUrl,
-        url: finalUrl, // 使用提取的正确URL
-        tags: selectedTags,
-        extractedAt: new Date().toISOString()
-      };
-      
-      console.log('保存的笔记对象:', simpleNote);
-      console.log('保存的笔记URL:', simpleNote.url);
-      console.log('保存的笔记URL类型:', typeof simpleNote.url);
-
-      // 保存到本地存储（保持兼容性）
-      const fullNote: StoredNote = {
-        id: simpleNote.id,
-        title: simpleNote.title,
-        content: '',
-        author: { name: '' },
-        images: finalCoverUrl ? [finalCoverUrl] : [],
-        originalImages: parsedData.cover && parsedData.cover !== '无封面' && !parsedData.cover.startsWith('/api/image-proxy')
-          ? [parsedData.cover] // 保存原始URL
-          : undefined,
-        permanentImages: permanentUrl ? [permanentUrl] : undefined,
-        tags: simpleNote.tags,
-        url: simpleNote.url, // 使用提取的正确URL
-        createTime: simpleNote.extractedAt,
-        extractedAt: simpleNote.extractedAt
-      };
-
-      StorageManager.saveNote(fullNote);
-      
-      setLoadingStage('收藏成功！');
-      
-      // 收藏后直接从 localStorage 重新加载所有笔记，避免重复
-      const notes = StorageManager.getAllNotes().map(note => ({
-        id: note.id,
-        title: note.title,
-        cover: note.images[0] || '',
-        url: note.url || '',
-        tags: note.tags || [],
-        extractedAt: note.extractedAt
-      }));
-      setSavedNotes(notes);
-      setUrl('');
-      setPendingNoteData(null);
-      playNotificationSound();
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '提取失败，请稍后重试');
-      // 重新显示标签弹窗，让用户可以重试
-      setShowTagModal(true);
-    } finally {
-      setIsLoading(false);
-      setLoadingStage('');
-    }
-  };
-
-  const handleDeleteNote = (id: string) => {
-    StorageManager.deleteNote(id);
-    setSavedNotes(prev => prev.filter(note => note.id !== id));
-  };
-
-  // 显示删除确认弹窗
-  const handleShowDeleteConfirm = (note: SimpleNote) => {
-    setDeletingNote(note);
-    setShowDeleteModal(true);
-  };
-
-  // 确认删除
-  const handleConfirmDelete = async () => {
-    if (deletingNote) {
-      // 获取 filename（假设保存在 deletingNote.filename）
-      const existingNote = StorageManager.getNoteById(deletingNote.id);
-      const filename = existingNote?.filename;
-      // 删除 Supabase Storage 图片
-      if (filename) {
-        try {
-          await fetch('/api/permanent-images', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename }),
-          });
-        } catch (e) {
-          console.warn('删除图片时出错', e);
-        }
-      }
-      // 删除本地笔记
-      StorageManager.deleteNote(deletingNote.id);
-      setSavedNotes(prev => prev.filter(note => note.id !== deletingNote.id));
-      playDeleteSound();
-    }
-    setShowDeleteModal(false);
-    setDeletingNote(null);
-  };
-
-  // 取消删除
-  const handleCancelDelete = () => {
-    setShowDeleteModal(false);
-    setDeletingNote(null);
-  };
-
-  // 打开标签编辑弹窗
-  const handleEditTags = (note: SimpleNote) => {
-    setEditingNote(note);
-    setShowTagEditModal(true);
-  };
-
-  // 保存标签修改
-  const handleSaveTagEdit = (noteId: string, newTags: string[]) => {
-    // 更新本地状态
-    setSavedNotes(prev => prev.map(note => 
-      note.id === noteId 
-        ? { ...note, tags: newTags }
-        : note
-    ));
-
-    // 更新本地存储
-    const existingNote = StorageManager.getNoteById(noteId);
-    if (existingNote) {
-      const updatedNote = { ...existingNote, tags: newTags };
-      StorageManager.saveNote(updatedNote);
-    }
-
-    // 更新全局标签列表
-    const allNotesAfterUpdate = savedNotes.map(note => 
-      note.id === noteId 
-        ? { ...note, tags: newTags }
-        : note
-    );
-    const updatedAllTags = Array.from(new Set(allNotesAfterUpdate.flatMap(note => note.tags)));
-    setAllTags(updatedAllTags);
-  };
-
-  const handleClearAll = () => {
-    StorageManager.clearAllNotes();
-    setSavedNotes([]);
-  };
-
-  // 显示清空确认弹窗
-  const handleShowClearAllConfirm = () => {
-    setShowClearAllModal(true);
-  };
-
-  // 确认清空
-  const handleConfirmClearAll = () => {
-    StorageManager.clearAllNotes();
-    setSavedNotes([]);
-    setAllTags([]);
-    setFilterTag(null);
-    setShowClearAllModal(false);
-    
-    // 播放删除音效
-    playDeleteSound();
-  };
-
-  // 取消清空
-  const handleCancelClearAll = () => {
-    setShowClearAllModal(false);
-  };
-
-  // 数据导出功能
-  const handleExportData = () => {
-    try {
-      const allNotes = StorageManager.getAllNotes();
-      const exportData = {
-        version: '1.0',
-        exportDate: new Date().toISOString(),
-        notes: allNotes,
-        tags: allTags
-      };
-      
-      const dataStr = JSON.stringify(exportData, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-      
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(dataBlob);
-      link.download = `小红书收藏_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // 播放提示音
-      playNotificationSound();
-      
-      console.log('数据导出成功:', allNotes.length, '篇笔记');
-    } catch (error) {
-      console.error('数据导出失败:', error);
-      setError('数据导出失败，请稍后重试');
-    }
-  };
-
-  // 数据导入功能
-  const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const importData = JSON.parse(e.target?.result as string);
-        
-        // 验证数据格式
-        if (!importData.notes || !Array.isArray(importData.notes)) {
-          throw new Error('无效的数据格式');
-        }
-        
-        // 获取现有数据
-        const existingNotes = StorageManager.getAllNotes();
-        const existingIds = new Set(existingNotes.map(note => note.id));
-        
-        // 过滤重复数据
-        const newNotes = importData.notes.filter((note: StoredNote) => !existingIds.has(note.id));
-        
-        if (newNotes.length === 0) {
-          setError('没有新的数据需要导入');
-          return;
-        }
-        
-        // 导入新数据
-        newNotes.forEach((note: StoredNote) => {
-          StorageManager.saveNote(note);
-        });
-        
-        // 更新界面
-        const updatedNotes = [...existingNotes, ...newNotes].map(note => ({
-          id: note.id,
-          title: note.title,
-          cover: note.images[0] || '',
-          url: note.url || '',
-          tags: note.tags || [],
-          extractedAt: note.extractedAt
-        }));
-        
-        setSavedNotes(updatedNotes);
-        
-        // 更新标签
-        const allImportedTags = Array.from(new Set([
-          ...allTags,
-          ...newNotes.flatMap((note: StoredNote) => note.tags || [])
-        ]));
-        setAllTags(allImportedTags);
-        
-        // 播放提示音
-        playNotificationSound();
-        
-        console.log('数据导入成功:', newNotes.length, '篇新笔记');
-        setShowDataManagement(false);
-        
-        // 显示成功消息
-        const successMsg = `成功导入 ${newNotes.length} 篇笔记`;
-        setTimeout(() => {
-          alert(successMsg);
-        }, 100);
-        
-      } catch (error) {
-        console.error('数据导入失败:', error);
-        setError('数据导入失败，请检查文件格式');
-      }
-    };
-    
-    reader.readAsText(file);
-    
-    // 清空input
-    event.target.value = '';
-  };
-
-  const openNote = (noteUrl: string) => {
-    console.log('点击卡片，准备打开URL:', noteUrl);
-    console.log('URL类型:', typeof noteUrl);
-    console.log('URL长度:', noteUrl?.length);
-    console.log('URL是否以http开头:', noteUrl?.startsWith('http://'));
-    console.log('URL是否以https开头:', noteUrl?.startsWith('https://'));
-    
-    if (noteUrl && (noteUrl.startsWith('https://') || noteUrl.startsWith('http://'))) {
-      console.log('URL验证通过，即将打开');
-      window.open(noteUrl, '_blank');
-    } else {
-      console.error('无效的URL:', noteUrl);
-      console.error('URL验证失败的原因: URL为空或不以http/https开头');
-    }
-  };
-
-  // 根据标签筛选笔记
-  const filteredNotes = filterTag 
-    ? savedNotes.filter(note => note.tags.includes(filterTag))
-    : savedNotes;
-
-  // 处理图片URL，使用代理来绕过防盗链
-  const getProxyImageUrl = (originalUrl: string): string => {
-    if (!originalUrl || originalUrl === '无封面') {
-      return '';
-    }
-    
-    // 如果已经是代理URL，直接返回
-    if (originalUrl.startsWith('/api/image-proxy')) {
-      return originalUrl;
-    }
-    
-    // 将HTTP转换为HTTPS
-    let processedUrl = originalUrl;
-    if (processedUrl.startsWith('http://')) {
-      processedUrl = processedUrl.replace('http://', 'https://');
-    }
-    
-    // 如果是小红书CDN链接，使用代理
-    if (processedUrl.includes('xhscdn.com')) {
-      return `/api/image-proxy?url=${encodeURIComponent(processedUrl)}`;
-    }
-    
-    return processedUrl;
-  };
-
-  // 获取最佳图片URL，优先使用本地图片，然后是浏览器缓存
-  const getImageUrl = (note: SimpleNote): string => {
-    // 检查是否有永久存储的图片
-    const existingNote = StorageManager.getNoteById(note.id);
-    
-    // 优先级1: 永久存储图片
-    if (existingNote?.permanentImages && existingNote.permanentImages[0]) {
-      return existingNote.permanentImages[0];
-    }
-    
-    // 优先级2: 本地服务器图片
-    if (existingNote?.localImages && existingNote.localImages[0]) {
-      return existingNote.localImages[0];
-    }
-    
-    // 优先级3: 浏览器缓存图片
-    if (existingNote?.cachedImages && existingNote.cachedImages[0]) {
-      return existingNote.cachedImages[0];
-    }
-    
-    // 优先级4: 如果是本地路径，直接返回
-    if (note.cover && note.cover.startsWith('/permanent-images/')) {
-      return note.cover;
-    }
-    
-    // 优先级5: 如果是Base64数据，直接返回
-    if (note.cover && note.cover.startsWith('data:')) {
-      return note.cover;
-    }
-    
-    // 优先级6: 回退到代理图片逻辑
-    return getProxyImageUrl(note.cover);
-  };
-
-  // 修复历史数据中的图片URL
-  const fixImageUrl = (noteId: string, newImageUrl: string) => {
-    // 更新localStorage中的数据
-    const existingNote = StorageManager.getNoteById(noteId);
-    if (existingNote && existingNote.images[0] !== newImageUrl) {
-      existingNote.images[0] = newImageUrl;
-      StorageManager.saveNote(existingNote);
-      
-      // 更新界面显示
-      setSavedNotes(prev => prev.map(note => 
-        note.id === noteId 
-          ? { ...note, cover: newImageUrl }
-          : note
-      ));
-    }
-  };
-
-  // 单个笔记重新提取封面
-  const refreshSingleCover = async (noteId: string) => {
-    const note = savedNotes.find(n => n.id === noteId);
-    if (!note || !note.url) {
-      console.error('找不到笔记或URL为空:', noteId);
-      setError('找不到笔记信息');
-      return;
-    }
-
-    if (refreshingSingleId === noteId) {
-      console.log('该笔记正在刷新中，跳过重复请求');
-      return;
-    }
-
-    setRefreshingSingleId(noteId);
-    setError(null);
-
-    try {
-      console.log(`🔄 开始重新提取单个封面: ${note.title}`);
-      
-      // 显示开始提示
-      const startNotification = document.createElement('div');
-      startNotification.innerHTML = `
-        <div style="
-          position: fixed; 
-          top: 80px; 
-          right: 20px; 
-          background: linear-gradient(135deg, #3b82f6, #1d4ed8); 
-          color: white; 
-          padding: 12px 16px; 
-          border-radius: 8px; 
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          z-index: 10000;
-          font-family: system-ui, -apple-system, sans-serif;
-          font-size: 14px;
-          animation: slideIn 0.3s ease-out;
-        ">
-          🔄 正在重新提取封面...
-        </div>
-        <style>
-          @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-          }
-        </style>
-      `;
-      document.body.appendChild(startNotification);
-      
-      const extractedUrl = extractXHSUrl(note.url || '');
-      console.log('提取的URL:', extractedUrl);
-      
-      if (!extractedUrl || !isValidXHSUrl(extractedUrl)) {
-        throw new Error(`无效的URL: ${note.url}`);
-      }
-      
-      const response = await fetch('/api/extract', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url: extractedUrl, quickPreview: true }),
-      });
-      
-      console.log('API响应状态:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API调用失败: ${response.status} - ${errorText}`);
-      }
-      
-      const result = await response.json();
-      console.log('API返回结果:', result);
-      
-      // 移除开始提示
-      if (startNotification.parentNode) {
-        document.body.removeChild(startNotification);
-      }
-      
-      if (result.success && result.data && result.data.cover && result.data.cover !== '无封面') {
-        const updatedCover = result.data.cover;
-        console.log('获取到新封面:', updatedCover);
-        
-        // 更新localStorage
-        const existingNote = StorageManager.getNoteById(noteId);
-        if (existingNote) {
-          existingNote.images[0] = updatedCover;
-          // 保存原始URL（如果不是代理URL）
-          if (!updatedCover.startsWith('/api/image-proxy')) {
-            existingNote.originalImages = [updatedCover];
-          }
-          StorageManager.saveNote(existingNote);
-          console.log('已更新localStorage');
-        }
-        
-        // 更新界面状态
-        setSavedNotes(prev => prev.map(n => 
-          n.id === noteId ? { ...n, cover: updatedCover } : n
-        ));
-        
-        // 立即更新对应的图片元素，强制重新加载
-        forceRefreshImage(noteId, updatedCover, 100);
-        
-        console.log(`✅ 单个封面更新成功: ${note.title}`);
-        
-        // 显示成功通知
-        const successNotification = document.createElement('div');
-        successNotification.innerHTML = `
-          <div style="
-            position: fixed; 
-            top: 80px; 
-            right: 20px; 
-            background: linear-gradient(135deg, #10b981, #059669); 
-            color: white; 
-            padding: 12px 16px; 
-            border-radius: 8px; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 10000;
-            font-family: system-ui, -apple-system, sans-serif;
-            font-size: 14px;
-            animation: slideIn 0.3s ease-out;
-          ">
-            ✅ 封面更新成功！
-          </div>
-          <style>
-            @keyframes slideIn {
-              from { transform: translateX(100%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-          </style>
-        `;
-        document.body.appendChild(successNotification);
-        
-        // 播放成功音效
-        playNotificationSound();
-        
-        // 3秒后移除成功通知
-        setTimeout(() => {
-          if (successNotification.parentNode) {
-            successNotification.style.animation = 'slideIn 0.3s ease-out reverse';
-            setTimeout(() => {
-              document.body.removeChild(successNotification);
-            }, 300);
-          }
-        }, 3000);
-        
-      } else {
-        throw new Error(`无法获取有效封面: ${JSON.stringify(result)}`);
-      }
-    } catch (error) {
-      console.error(`单个封面提取失败: ${note.title}`, error);
-      
-      // 显示错误通知
-      const errorNotification = document.createElement('div');
-      errorNotification.innerHTML = `
-        <div style="
-          position: fixed; 
-          top: 80px; 
-          right: 20px; 
-          background: linear-gradient(135deg, #ef4444, #dc2626); 
-          color: white; 
-          padding: 12px 16px; 
-          border-radius: 8px; 
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          z-index: 10000;
-          font-family: system-ui, -apple-system, sans-serif;
-          font-size: 14px;
-          animation: slideIn 0.3s ease-out;
-        ">
-          ❌ 封面提取失败: ${error instanceof Error ? error.message : '未知错误'}
-        </div>
-        <style>
-          @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-          }
-        </style>
-      `;
-      document.body.appendChild(errorNotification);
-      
-      // 5秒后移除错误通知
-      setTimeout(() => {
-        if (errorNotification.parentNode) {
-          errorNotification.style.animation = 'slideIn 0.3s ease-out reverse';
-          setTimeout(() => {
-            document.body.removeChild(errorNotification);
-          }, 300);
-        }
-      }, 5000);
-      
-      setError(`封面提取失败: ${error instanceof Error ? error.message : '未知错误'}`);
-    } finally {
-      setRefreshingSingleId(null);
-    }
+    setShowTagSelection(true);
   };
 
   // 渲染小红书风格的简化笔记卡片
@@ -2656,42 +2006,6 @@ export default function XHSExtractor() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    console.log('=== 调试信息 ===');
-                    console.log('savedNotes数量:', savedNotes.length);
-                    console.log('refreshingSingleId:', refreshingSingleId);
-                    console.log('缺失封面的笔记:', savedNotes.filter(note => 
-                      !note.cover || note.cover === '无封面' || note.cover === ''
-                    ));
-                    
-                    // 测试第一个无封面的笔记
-                    const testNote = savedNotes.find(note => 
-                      !note.cover || note.cover === '无封面' || note.cover === ''
-                    );
-                    if (testNote) {
-                      console.log('测试笔记:', testNote);
-                      refreshSingleCover(testNote.id);
-                    } else {
-                      console.log('没有找到需要测试的笔记');
-                    }
-                  }}
-                  className="text-gray-500 hover:text-purple-500"
-                  title="调试单个封面提取"
-                >
-                  🐛 调试测试
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => fixHistoricalImageUrls(savedNotes)}
-                  className="text-gray-500 hover:text-orange-500"
-                  title="修复图片显示问题"
-                >
-                  🔧 修复图片
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
                   onClick={() => setShowDataManagement(true)}
                   className="text-gray-500 hover:text-blue-500"
                 >
@@ -2705,35 +2019,6 @@ export default function XHSExtractor() {
                 >
                   <Trash2 className="h-4 w-4 mr-1" />
                   清空收藏
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => performImageHealthCheck(savedNotes)}
-                  className="text-gray-500 hover:text-purple-500"
-                  title="检查图片健康状态"
-                >
-                  🔍 健康检查
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => downloadAllCoversToLocal()}
-                  disabled={isRefreshingCovers}
-                  className="text-gray-500 hover:text-blue-500"
-                  title="下载所有封面到本地"
-                >
-                  💾 本地保存
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => cacheAllImagesToBrowser()}
-                  disabled={isRefreshingCovers}
-                  className="text-gray-500 hover:text-purple-500"
-                  title="缓存所有图片到浏览器"
-                >
-                  💽 浏览器缓存
                 </Button>
               </div>
             </div>
@@ -2867,8 +2152,8 @@ export default function XHSExtractor() {
 
       {/* 标签选择弹窗 */}
       <TagSelectionModal
-        isOpen={showTagModal}
-        onClose={() => setShowTagModal(false)}
+        isOpen={showTagSelection}
+        onClose={() => setShowTagSelection(false)}
         onConfirm={handleConfirmSave}
         allTags={allTags}
         onCreateTag={handleCreateTag}
@@ -2876,8 +2161,8 @@ export default function XHSExtractor() {
 
       {/* 标签编辑弹窗 */}
       <TagEditModal
-        isOpen={showTagEditModal}
-        onClose={() => setShowTagEditModal(false)}
+        isOpen={showTagEdit}
+        onClose={() => setShowTagEdit(false)}
         onSave={handleSaveTagEdit}
         note={editingNote}
         allTags={allTags}
@@ -2886,7 +2171,7 @@ export default function XHSExtractor() {
 
       {/* 删除确认弹窗 */}
       <DeleteConfirmModal
-        isOpen={showDeleteModal}
+        isOpen={showDeleteConfirm}
         onClose={handleCancelDelete}
         onConfirm={handleConfirmDelete}
         noteTitle={deletingNote?.title || ''}
@@ -2894,7 +2179,7 @@ export default function XHSExtractor() {
 
       {/* 清空确认弹窗 */}
       <ClearAllConfirmModal
-        isOpen={showClearAllModal}
+        isOpen={showClearAllConfirm}
         onClose={handleCancelClearAll}
         onConfirm={handleConfirmClearAll}
         notesCount={savedNotes.length}

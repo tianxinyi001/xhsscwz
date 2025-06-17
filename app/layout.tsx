@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: '小红书信息提取器',
-  description: '使用Coze AI快速提取小红书笔记信息',
+  title: '红书对标库',
+  description: '发现红书爆款，收藏你的专属灵感',
 }
 
 export default function RootLayout({
