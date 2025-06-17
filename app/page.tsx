@@ -1,4 +1,4 @@
-import XHSExtractor from '@/components/xhs-extractor-clean'
+import XHSExtractor from '@/components/xhs-extractor'
  
 export default function Home() {
   return <XHSExtractor />

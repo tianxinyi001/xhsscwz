@@ -2,14 +2,11 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 
-const inter = Inter({ 
-  subsets: ['latin'],
-  display: 'swap',
-})
+const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: '红书对标库',
-  description: '发现红书爆款，收藏你的专属灵感',
+  title: '小红书信息提取器',
+  description: '使用Coze AI快速提取小红书笔记信息',
 }
 
 export default function RootLayout({
