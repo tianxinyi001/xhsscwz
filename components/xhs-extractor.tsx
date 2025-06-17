@@ -403,153 +403,6 @@ function DeleteConfirmModal({
   );
 }
 
-// 清空确认弹窗组件
-function ClearAllConfirmModal({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  notesCount 
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  notesCount: number;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4">
-        <div className="text-center">
-          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Trash2 className="h-6 w-6 text-red-500" />
-          </div>
-          
-          <h3 className="text-lg font-semibold text-gray-800 mb-2">确认清空收藏</h3>
-          
-          <div className="text-sm text-gray-600 mb-4">
-            <p className="mb-2">您确定要清空所有收藏的笔记吗？</p>
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="font-medium text-gray-800">共 {notesCount} 篇笔记</p>
-            </div>
-            <p className="mt-2 text-red-500">此操作无法撤销</p>
-          </div>
-
-          <div className="flex gap-3">
-            <Button 
-              variant="ghost" 
-              onClick={onClose} 
-              className="flex-1"
-            >
-              取消
-            </Button>
-            <Button 
-              onClick={onConfirm} 
-              className="flex-1 bg-red-500 hover:bg-red-600 text-white"
-            >
-              确认清空
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// 数据管理弹窗组件
-function DataManagementModal({ 
-  isOpen, 
-  onClose, 
-  onExport,
-  onImport,
-  notesCount 
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onExport: () => void;
-  onImport: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  notesCount: number;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold">数据管理</h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <div className="space-y-4">
-          {/* 当前数据状态 */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-medium text-gray-800 mb-2">当前数据</h4>
-            <p className="text-sm text-gray-600">已收藏 {notesCount} 篇笔记</p>
-            <p className="text-xs text-gray-500 mt-1">
-              数据存储在浏览器本地，换浏览器或清理缓存会丢失
-            </p>
-          </div>
-
-          {/* 导出数据 */}
-          <div className="space-y-3">
-            <h4 className="font-medium text-gray-800">备份数据</h4>
-            <Button
-              onClick={onExport}
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white"
-            >
-              📥 导出备份文件
-            </Button>
-            <p className="text-xs text-gray-500">
-              将您的收藏数据导出为JSON文件，可在其他浏览器中恢复
-            </p>
-          </div>
-
-          {/* 导入数据 */}
-          <div className="space-y-3">
-            <h4 className="font-medium text-gray-800">恢复数据</h4>
-            <div className="relative">
-              <input
-                type="file"
-                accept=".json"
-                onChange={onImport}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                id="import-file"
-              />
-              <label
-                htmlFor="import-file"
-                className="flex items-center justify-center w-full bg-green-500 hover:bg-green-600 text-white rounded-lg px-4 py-2 cursor-pointer transition-colors font-medium text-sm"
-              >
-                📤 选择备份文件恢复
-              </label>
-            </div>
-            <p className="text-xs text-gray-500">
-              选择之前导出的JSON备份文件，自动合并去重
-            </p>
-          </div>
-
-          {/* 使用说明 */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-            <h5 className="text-sm font-medium text-yellow-800 mb-1">💡 使用建议</h5>
-            <ul className="text-xs text-yellow-700 space-y-1">
-              <li>• 定期导出备份，防止数据丢失</li>
-              <li>• 换浏览器时使用备份文件恢复数据</li>
-              <li>• 导入时会自动过滤重复内容</li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-6">
-          <Button variant="ghost" onClick={onClose} className="flex-1">
-            关闭
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function XHSExtractor() {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -572,17 +425,6 @@ export default function XHSExtractor() {
   // 删除确认状态
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingNote, setDeletingNote] = useState<SimpleNote | null>(null);
-
-  // 清空确认状态
-  const [showClearAllModal, setShowClearAllModal] = useState(false);
-
-  // 数据导出/导入相关状态
-  const [showDataManagement, setShowDataManagement] = useState(false);
-
-  // 重新提取封面相关状态
-  const [isRefreshingCovers, setIsRefreshingCovers] = useState(false);
-  const [refreshProgress, setRefreshProgress] = useState({ current: 0, total: 0 });
-  const [refreshingSingleId, setRefreshingSingleId] = useState<string | null>(null);
 
   // 数据加载状态
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -984,216 +826,6 @@ export default function XHSExtractor() {
     setAllTags(updatedAllTags);
   };
 
-  const handleClearAll = async () => {
-    await StorageManager.clearAllNotes();
-    setSavedNotes([]);
-  };
-
-  // 显示清空确认弹窗
-  const handleShowClearAllConfirm = () => {
-    setShowClearAllModal(true);
-  };
-
-  // 确认清空
-  const handleConfirmClearAll = async () => {
-    try {
-      console.log('🗑️ 开始清空所有收藏和相关图片...');
-      
-      // 1. 获取所有笔记数据
-      const allNotes = await StorageManager.getAllNotes();
-      console.log(`📋 准备清空 ${allNotes.length} 篇笔记`);
-      
-      // 2. 收集所有需要删除的图片文件名
-      const allImagesToDelete: string[] = [];
-      
-      allNotes.forEach(note => {
-        // 从 filename 字段获取文件名
-        if (note.filename) {
-          allImagesToDelete.push(note.filename);
-          console.log('📎 添加filename图片:', note.filename);
-        }
-        
-        // 从 permanentImages 中提取文件名
-        if (note.permanentImages && note.permanentImages.length > 0) {
-          note.permanentImages.forEach(imageUrl => {
-            // 从Supabase Storage URL中提取文件名
-            const urlParts = imageUrl.split('/');
-            const filename = urlParts[urlParts.length - 1];
-            if (filename && !allImagesToDelete.includes(filename)) {
-              allImagesToDelete.push(filename);
-              console.log('🖼️ 添加permanentImages图片:', filename);
-            }
-          });
-        }
-      });
-      
-      // 3. 删除Supabase Storage中的所有图片
-      if (allImagesToDelete.length > 0) {
-        console.log(`🗑️ 准备删除 ${allImagesToDelete.length} 个图片文件...`);
-        
-        let deletedCount = 0;
-        let failedCount = 0;
-        
-        for (const filename of allImagesToDelete) {
-          try {
-            const deleteResponse = await fetch('/api/permanent-images', {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ filename }),
-            });
-            
-            if (deleteResponse.ok) {
-              deletedCount++;
-              console.log('✅ 成功删除图片:', filename);
-            } else {
-              failedCount++;
-              const errorData = await deleteResponse.json();
-              console.warn('⚠️ 删除图片失败:', filename, errorData.error);
-            }
-          } catch (e) {
-            failedCount++;
-            console.warn('⚠️ 删除图片时出错:', filename, e);
-          }
-        }
-        
-        console.log(`📊 图片删除完成: 成功 ${deletedCount}，失败 ${failedCount}`);
-      } else {
-        console.log('ℹ️ 没有需要删除的Storage图片');
-      }
-      
-      // 4. 删除数据库中的所有笔记
-      console.log('🗑️ 删除数据库中的所有笔记...');
-      await StorageManager.clearAllNotes();
-      
-      // 5. 更新界面状态
-    setSavedNotes([]);
-    setAllTags([]);
-    setFilterTag(null);
-    setShowClearAllModal(false);
-    
-      // 6. 播放删除音效
-    playDeleteSound();
-      
-      console.log('✅ 所有收藏和图片清空完成！');
-      
-    } catch (error) {
-      console.error('❌ 清空收藏失败:', error);
-      setError('清空收藏失败，请稍后重试');
-      setShowClearAllModal(false);
-    }
-  };
-
-  // 取消清空
-  const handleCancelClearAll = () => {
-    setShowClearAllModal(false);
-  };
-
-  // 数据导出功能
-  const handleExportData = async () => {
-    try {
-      const allNotes = await StorageManager.getAllNotes();
-      const exportData = {
-        version: '1.0',
-        exportDate: new Date().toISOString(),
-        notes: allNotes,
-        tags: allTags
-      };
-      
-      const dataStr = JSON.stringify(exportData, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-      
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(dataBlob);
-      link.download = `小红书收藏_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // 播放提示音
-      playNotificationSound();
-      
-      console.log('数据导出成功:', allNotes.length, '篇笔记');
-    } catch (error) {
-      console.error('数据导出失败:', error);
-      setError('数据导出失败，请稍后重试');
-    }
-  };
-
-  // 数据导入功能
-  const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const importData = JSON.parse(e.target?.result as string);
-        
-        // 验证数据格式
-        if (!importData.notes || !Array.isArray(importData.notes)) {
-          throw new Error('无效的数据格式');
-        }
-        
-        // 获取现有数据
-        const existingNotes = await StorageManager.getAllNotes();
-        const existingIds = new Set(existingNotes.map(note => note.id));
-        
-        // 过滤重复数据
-        const newNotes = importData.notes.filter((note: StoredNote) => !existingIds.has(note.id));
-        
-        if (newNotes.length === 0) {
-          setError('没有新的数据需要导入');
-          return;
-        }
-        
-        // 导入新数据
-        for (const note of newNotes) {
-          await StorageManager.saveNote(note);
-        }
-        
-        // 更新界面
-        const updatedNotes = [...existingNotes, ...newNotes].map(note => ({
-          id: note.id,
-          title: note.title,
-          cover: note.images[0] || '',
-          url: note.url || '',
-          tags: note.tags || [],
-          extractedAt: note.extractedAt
-        }));
-        
-        setSavedNotes(updatedNotes);
-        
-        // 更新标签
-        const allImportedTags = Array.from(new Set([
-          ...allTags,
-          ...newNotes.flatMap((note: StoredNote) => note.tags || [])
-        ]));
-        setAllTags(allImportedTags);
-        
-        // 播放提示音
-        playNotificationSound();
-        
-        console.log('数据导入成功:', newNotes.length, '篇新笔记');
-        setShowDataManagement(false);
-        
-        // 显示成功消息
-        const successMsg = `成功导入 ${newNotes.length} 篇笔记`;
-        setTimeout(() => {
-          alert(successMsg);
-        }, 100);
-        
-      } catch (error) {
-        console.error('数据导入失败:', error);
-        setError('数据导入失败，请检查文件格式');
-      }
-    };
-    
-    reader.readAsText(file);
-    
-    // 清空input
-    event.target.value = '';
-  };
-
   const openNote = (noteUrl: string) => {
     console.log('点击卡片，准备打开URL:', noteUrl);
     console.log('URL类型:', typeof noteUrl);
@@ -1291,11 +923,6 @@ export default function XHSExtractor() {
     }
   };
 
-  // 单个笔记重新提取封面
-  const refreshSingleCover = async (noteId: string) => {
-    // 删除此函数及其后面所有辅助功能函数
-  };
-
   // 下载并保存图片到永久存储
   async function downloadAndSaveImage(imageUrl: string, noteId: string): Promise<string | null> {
     try {
@@ -1329,817 +956,14 @@ export default function XHSExtractor() {
       return result.imageUrl;
     } catch (error) {
       console.error('保存图片失败:', error);
-      return null;
-    }
+        return null;
+      }
   }
-
-  // 渲染小红书风格的简化笔记卡片
-  const renderNoteCard = (note: SimpleNote) => {
-    // 获取最佳图片URL（同步版本，用于渲染）
-    const getImageUrlSync = (note: SimpleNote): string => {
-      // 优先级1: 如果是本地路径，直接返回
-      if (note.cover && note.cover.startsWith('/permanent-images/')) {
-        return note.cover;
-      }
-      
-      // 优先级2: 如果是Base64数据，直接返回
-      if (note.cover && note.cover.startsWith('data:')) {
-        return note.cover;
-      }
-      
-      // 优先级3: 回退到代理图片逻辑
-      return getProxyImageUrl(note.cover);
-    };
-
-    const imageUrl = getImageUrlSync(note);
-    
-    return (
-      <div 
-        key={note.id}
-        data-note-id={note.id}
-        className="xhs-note-card group"
-        onClick={() => openNote(note.url)}
-      >
-        {/* 封面图片 */}
-        <div className="relative overflow-hidden aspect-[3/4] w-full bg-gray-100 flex items-center justify-center">
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={note.title}
-              className="max-w-full max-h-full object-contain mx-auto"
-              onError={async (e) => {
-                // 图片加载失败时的处理策略
-                console.error('图片加载失败:', imageUrl);
-                
-                const target = e.target as HTMLImageElement;
-                
-                // 如果是本地图片失败，尝试使用代理URL
-                if (imageUrl.startsWith('/uploads/')) {
-                  const fallbackUrl = getProxyImageUrl(note.cover);
-                  if (fallbackUrl && fallbackUrl !== imageUrl) {
-                    console.log('本地图片失败，尝试代理URL:', fallbackUrl);
-                    target.src = fallbackUrl;
-                    return;
-                  }
-                }
-                
-                // 如果当前使用的不是代理URL，尝试使用代理
-                if (!note.cover.startsWith('/api/image-proxy') && note.cover.includes('xhscdn.com')) {
-                  const fallbackUrl = getProxyImageUrl(note.cover);
-                  if (fallbackUrl !== imageUrl) {
-                    console.log('尝试代理URL:', fallbackUrl);
-                    target.src = fallbackUrl;
-                    
-                    // 修复localStorage中的数据
-                    await fixImageUrl(note.id, fallbackUrl);
-                    return;
-                  }
-                }
-                
-                // 如果是HTTP URL，尝试HTTPS
-                if (note.cover.startsWith('http://')) {
-                  const httpsUrl = note.cover.replace('http://', 'https://');
-                  const httpsProxyUrl = getProxyImageUrl(httpsUrl);
-                  console.log('尝试HTTPS代理URL:', httpsProxyUrl);
-                  target.src = httpsProxyUrl;
-                  
-                  // 修复localStorage中的数据
-                  await fixImageUrl(note.id, httpsProxyUrl);
-                  return;
-                }
-                
-                // 最终失败，显示占位符和重新提取按钮
-                target.style.display = 'none';
-                const placeholder = target.nextElementSibling as HTMLElement;
-                if (placeholder) {
-                  placeholder.style.display = 'flex';
-                }
-              }}
-              onLoad={async () => {
-                console.log('图片加载成功:', imageUrl);
-                
-                // 如果成功加载了修复后的URL，更新数据
-                if (imageUrl !== note.cover && imageUrl.startsWith('/api/image-proxy')) {
-                  await fixImageUrl(note.id, imageUrl);
-                }
-              }}
-            />
-          ) : null}
-          {/* 图片加载失败或无封面时的占位符 */}
-          <div 
-            data-placeholder="true"
-            className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200"
-            style={{ display: imageUrl ? 'none' : 'flex' }}
-          >
-            <div className="text-center">
-              <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center mx-auto mb-2">
-                <span className="text-gray-500 text-xs">📷</span>
-              </div>
-              <span className="text-gray-400 text-xs">暂无封面</span>
-              {/* 重新提取封面按钮 */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  console.log('点击重新获取按钮，笔记ID:', note.id);
-                  refreshSingleCover(note.id);
-                }}
-                disabled={refreshingSingleId === note.id}
-                className={`mt-2 px-2 py-1 text-white text-xs rounded transition-colors flex items-center gap-1 ${
-                  refreshingSingleId === note.id 
-                    ? 'bg-gray-400 cursor-not-allowed' 
-                    : 'bg-green-500 hover:bg-green-600'
-                }`}
-                title="重新提取封面"
-              >
-                {refreshingSingleId === note.id ? (
-                  <>
-                    <div className="animate-spin h-3 w-3 border border-white border-t-transparent rounded-full"></div>
-                    提取中...
-                  </>
-                ) : (
-                  <>🔄 重新获取</>
-                )}
-              </button>
-            </div>
-          </div>
-          
-          {/* 删除按钮 */}
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleShowDeleteConfirm(note);
-              }}
-              className="h-7 w-7 p-0 bg-black/20 hover:bg-black/40 text-white rounded-full"
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
-
-          {/* 编辑标签按钮 */}
-          <div className="absolute top-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEditTags(note);
-              }}
-              className="h-7 w-7 p-0 bg-black/20 hover:bg-black/40 text-white rounded-full"
-            >
-              <Tag className="h-3 w-3" />
-            </Button>
-          </div>
-
-          {/* 外链图标 */}
-          <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="bg-black/20 rounded-full p-1">
-              <ExternalLink className="h-3 w-3 text-white" />
-            </div>
-          </div>
-        </div>
-        
-        {/* 标题和标签 */}
-        <div className="p-3">
-          <h3 className="title line-clamp-2 mb-2">
-            {note.title}
-          </h3>
-          {note.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {note.tags.map((tag, index) => (
-                <span
-                  key={index}
-                  className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded-full"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // 重新提取丢失的封面
-  const refreshMissingCovers = async () => {
-    if (isRefreshingCovers) return;
-    
-    setIsRefreshingCovers(true);
-    setError(null);
-    
-    try {
-      // 找出需要重新提取封面的笔记
-      const notesToRefresh = savedNotes.filter(note => 
-        note.url && (
-          !note.cover || 
-          note.cover === '无封面' || 
-          note.cover === '' ||
-          note.cover.includes('暂无封面')
-        )
-      );
-      
-      if (notesToRefresh.length === 0) {
-        setTimeout(() => {
-          const notification = document.createElement('div');
-          notification.innerHTML = `
-            <div style="
-              position: fixed; 
-              top: 80px; 
-              right: 20px; 
-              background: linear-gradient(135deg, #6b7280, #4b5563); 
-              color: white; 
-              padding: 16px 20px; 
-              border-radius: 12px; 
-              box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-              z-index: 10000;
-              font-family: system-ui, -apple-system, sans-serif;
-              max-width: 320px;
-              animation: slideIn 0.3s ease-out;
-            ">
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="font-size: 20px;">✅</span>
-                <strong>检查完成</strong>
-              </div>
-              <div style="font-size: 14px; opacity: 0.95;">
-                所有笔记都已有封面，无需重新提取
-              </div>
-            </div>
-            <style>
-              @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-              }
-            </style>
-          `;
-          
-          document.body.appendChild(notification);
-          
-          setTimeout(() => {
-            if (notification.parentNode) {
-              notification.style.animation = 'slideIn 0.3s ease-out reverse';
-              setTimeout(() => {
-                document.body.removeChild(notification);
-              }, 300);
-            }
-          }, 3000);
-        }, 100);
-        
-        setIsRefreshingCovers(false);
-        return;
-      }
-      
-      console.log(`🔄 开始重新提取 ${notesToRefresh.length} 篇笔记的封面...`);
-      setRefreshProgress({ current: 0, total: notesToRefresh.length });
-      
-      const successCount = { value: 0 };
-      const failCount = { value: 0 };
-      
-      // 逐个重新提取封面
-      for (let i = 0; i < notesToRefresh.length; i++) {
-        const note = notesToRefresh[i];
-        setRefreshProgress({ current: i + 1, total: notesToRefresh.length });
-        
-        try {
-          console.log(`📷 重新提取封面 (${i + 1}/${notesToRefresh.length}): ${note.title}`);
-          
-          // 从URL中提取正确的小红书链接
-          const extractedUrl = extractXHSUrl(note.url || '');
-          if (!extractedUrl || !isValidXHSUrl(extractedUrl)) {
-            console.warn(`跳过无效URL: ${note.url}`);
-            failCount.value++;
-            continue;
-          }
-          
-          // 调用API重新提取封面
-          const response = await fetch('/api/extract', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ url: extractedUrl, quickPreview: true }),
-          });
-          
-          if (!response.ok) {
-            throw new Error(`API调用失败: ${response.status}`);
-          }
-          
-          const result = await response.json();
-          
-          if (result.success && result.data && result.data.cover && result.data.cover !== '无封面') {
-            // 更新笔记封面
-            const updatedCover = result.data.cover;
-            
-            // 更新localStorage
-            const existingNote = await StorageManager.getNoteById(note.id);
-            if (existingNote) {
-              existingNote.images[0] = updatedCover;
-              // 保存原始URL（如果不是代理URL）
-              if (!updatedCover.startsWith('/api/image-proxy')) {
-                existingNote.originalImages = [updatedCover];
-              }
-              await StorageManager.saveNote(existingNote);
-            }
-            
-            // 更新界面状态
-            setSavedNotes(prev => prev.map(n => 
-              n.id === note.id ? { ...n, cover: updatedCover } : n
-            ));
-            
-            // 立即更新对应的图片元素，错开更新时间避免闪烁
-            forceRefreshImage(note.id, updatedCover, 200 * i);
-            
-            successCount.value++;
-            console.log(`✅ 封面更新成功: ${note.title}`);
-          } else {
-            console.warn(`封面提取失败: ${note.title}`, result);
-            failCount.value++;
-          }
-          
-          // 避免请求过于频繁
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-        } catch (error) {
-          console.error(`封面提取失败: ${note.title}`, error);
-          failCount.value++;
-        }
-      }
-      
-      // 显示完成通知
-      setTimeout(() => {
-        const notification = document.createElement('div');
-        notification.innerHTML = `
-          <div style="
-            position: fixed; 
-            top: 80px; 
-            right: 20px; 
-            background: linear-gradient(135deg, #10b981, #059669); 
-            color: white; 
-            padding: 16px 20px; 
-            border-radius: 12px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            z-index: 10000;
-            font-family: system-ui, -apple-system, sans-serif;
-            max-width: 320px;
-            animation: slideIn 0.3s ease-out;
-          ">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-              <span style="font-size: 20px;">📷</span>
-              <strong>封面刷新完成</strong>
-            </div>
-            <div style="font-size: 14px; opacity: 0.95; margin-bottom: 4px;">
-              成功恢复 ${successCount.value} 个封面
-            </div>
-            ${failCount.value > 0 ? `<div style="font-size: 12px; opacity: 0.8;">失败 ${failCount.value} 个</div>` : ''}
-          </div>
-          <style>
-            @keyframes slideIn {
-              from { transform: translateX(100%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-          </style>
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // 播放成功音效
-        playNotificationSound();
-        
-        setTimeout(() => {
-          if (notification.parentNode) {
-            notification.style.animation = 'slideIn 0.3s ease-out reverse';
-            setTimeout(() => {
-              document.body.removeChild(notification);
-            }, 300);
-          }
-        }, 5000);
-      }, 500);
-      
-      console.log(`🎉 封面刷新完成! 成功: ${successCount.value}, 失败: ${failCount.value}`);
-      
-    } catch (error) {
-      console.error('重新提取封面过程中出现错误:', error);
-      setError('重新提取封面失败，请稍后重试');
-    } finally {
-      setIsRefreshingCovers(false);
-      setRefreshProgress({ current: 0, total: 0 });
-    }
-  };
-
-  // 强制刷新指定笔记的图片显示
-  const forceRefreshImage = (noteId: string, newImageUrl: string, delay: number = 100) => {
-    setTimeout(() => {
-      const noteCard = document.querySelector(`[data-note-id="${noteId}"]`);
-      if (noteCard) {
-        const imgElement = noteCard.querySelector('img') as HTMLImageElement;
-        const placeholderElement = noteCard.querySelector('[data-placeholder]') as HTMLElement;
-        
-        if (placeholderElement) {
-          // 隐藏占位符
-          placeholderElement.style.display = 'none';
-        }
-        
-        if (imgElement) {
-          // 显示并更新图片
-          imgElement.style.display = 'block';
-          
-          // 强制重新加载图片（添加时间戳避免缓存）
-          const timestamp = Date.now();
-          const newSrc = newImageUrl.includes('?') 
-            ? `${newImageUrl}&t=${timestamp}`
-            : `${newImageUrl}?t=${timestamp}`;
-          
-          imgElement.src = newSrc;
-          
-          console.log(`🖼️ 强制刷新图片显示 [${noteId}]:`, newSrc);
-        } else {
-          // 如果没有img元素，创建一个新的
-          const imageContainer = noteCard.querySelector('.aspect-\\[3\\/4\\]');
-          if (imageContainer && placeholderElement) {
-            const newImg = document.createElement('img');
-            newImg.src = newImageUrl;
-            newImg.alt = '';
-            newImg.className = 'max-w-full max-h-full object-contain mx-auto';
-            
-            imageContainer.insertBefore(newImg, placeholderElement);
-            
-            console.log(`🆕 创建新图片元素 [${noteId}]:`, newImageUrl);
-          }
-        }
-      }
-    }, delay);
-  };
-
-  // 图片健康检查 - 检测并修复失效的图片链接
-  const performImageHealthCheck = async (notes: SimpleNote[]) => {
-    console.log('🔍 开始图片健康检查...');
-    
-    const failedImages: { noteId: string; title: string; imageUrl: string }[] = [];
-    
-    // 检查每个笔记的封面
-    for (const note of notes) {
-      if (note.cover && note.cover.startsWith('/api/image-proxy')) {
-        try {
-          // 尝试加载图片，如果失败则记录
-          const checkResult = await checkImageAvailability(note.cover);
-          if (!checkResult) {
-            failedImages.push({
-              noteId: note.id,
-              title: note.title,
-              imageUrl: note.cover
-            });
-          }
-        } catch (error) {
-          failedImages.push({
-            noteId: note.id,
-            title: note.title,
-            imageUrl: note.cover
-          });
-        }
-      }
-    }
-    
-    if (failedImages.length > 0) {
-      console.log(`⚠️ 发现 ${failedImages.length} 个失效的图片链接`);
-      
-      // 显示检测结果通知
-      setTimeout(() => {
-        const notification = document.createElement('div');
-        notification.innerHTML = `
-          <div style="
-            position: fixed; 
-            top: 80px; 
-            right: 20px; 
-            background: linear-gradient(135deg, #f59e0b, #d97706); 
-            color: white; 
-            padding: 16px 20px; 
-            border-radius: 12px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            z-index: 10000;
-            font-family: system-ui, -apple-system, sans-serif;
-            max-width: 320px;
-            animation: slideIn 0.3s ease-out;
-          ">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-              <span style="font-size: 20px;">⚠️</span>
-              <strong>发现失效封面</strong>
-            </div>
-            <div style="font-size: 14px; opacity: 0.95; margin-bottom: 8px;">
-              检测到 ${failedImages.length} 个封面链接失效
-            </div>
-            <div style="font-size: 12px; opacity: 0.8;">
-              建议点击"📷 刷新封面"重新获取
-            </div>
-          </div>
-          <style>
-            @keyframes slideIn {
-              from { transform: translateX(100%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-          </style>
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // 8秒后自动移除通知
-        setTimeout(() => {
-          if (notification.parentNode) {
-            notification.style.animation = 'slideIn 0.3s ease-out reverse';
-            setTimeout(() => {
-              document.body.removeChild(notification);
-            }, 300);
-          }
-        }, 8000);
-      }, 100);
-      
-      // 自动尝试从原始URL重新生成代理URL
-      await autoFixFailedImages(failedImages);
-    } else {
-      console.log('✅ 图片健康检查完成，所有封面正常');
-    }
-  };
-
-  // 检查图片是否可用
-  const checkImageAvailability = (imageUrl: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve(true);
-      img.onerror = () => resolve(false);
-      img.src = imageUrl;
-      
-      // 5秒超时
-      setTimeout(() => resolve(false), 5000);
-    });
-  };
-
-  // 自动修复失效的图片链接
-  const autoFixFailedImages = async (failedImages: { noteId: string; title: string; imageUrl: string }[]) => {
-    console.log('🔧 开始自动修复失效图片...');
-    
-    let fixedCount = 0;
-    
-    for (const failed of failedImages) {
-      try {
-        console.log(`🔧 尝试修复: ${failed.title}`);
-        
-        // 获取原始笔记数据
-        const existingNote = await StorageManager.getNoteById(failed.noteId);
-        
-        if (!existingNote) {
-          console.warn(`找不到笔记数据: ${failed.noteId}`);
-          continue;
-        }
-        
-        let fixedUrl: string | null = null;
-        
-        // 修复策略1: 使用原始图片URL
-        if (existingNote.originalImages && existingNote.originalImages[0]) {
-          const originalUrl = existingNote.originalImages[0];
-          console.log('尝试使用原始URL:', originalUrl);
-          
-          // 检查原始URL是否可用
-          const isOriginalAvailable = await checkImageAvailability(getProxyImageUrl(originalUrl));
-          if (isOriginalAvailable) {
-            fixedUrl = getProxyImageUrl(originalUrl);
-            console.log('✅ 原始URL可用:', fixedUrl);
-          }
-        }
-        
-        // 修复策略2: 重新提取笔记封面
-        if (!fixedUrl && existingNote.url) {
-          console.log('尝试重新提取封面...');
-          try {
-              const response = await fetch('/api/extract', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-              body: JSON.stringify({ url: existingNote.url, quickPreview: true }),
-              });
-              
-              if (response.ok) {
-                const result = await response.json();
-                if (result.success && result.data && result.data.cover && result.data.cover !== '无封面') {
-                  fixedUrl = result.data.cover;
-                console.log('✅ 重新提取成功:', fixedUrl);
-              }
-            }
-          } catch (error) {
-            console.warn('重新提取失败:', error);
-          }
-        }
-        
-        // 如果找到了有效的修复URL，应用修复
-        if (fixedUrl) {
-          // 在这个if块内，fixedUrl已经确认不为null
-          const validFixedUrl = fixedUrl; // TypeScript类型细化
-          
-          // 更新存储
-          existingNote.images[0] = validFixedUrl;
-          await StorageManager.saveNote(existingNote);
-          
-          // 更新界面
-          setSavedNotes(prev => prev.map(note => 
-            note.id === failed.noteId ? { ...note, cover: validFixedUrl } : note
-          ));
-          
-          // 强制刷新图片显示
-          forceRefreshImage(failed.noteId, validFixedUrl, fixedCount * 100);
-          
-          fixedCount++;
-          console.log(`✅ 自动修复成功: ${failed.title}`);
-        } else {
-          console.warn(`❌ 所有修复策略都失败: ${failed.title}`);
-        }
-        
-        // 避免请求过于频繁
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-      } catch (error) {
-        console.error(`自动修复失败: ${failed.title}`, error);
-      }
-    }
-  };
-
-  const cacheAllImagesToBrowser = async () => {
-    if (isRefreshingCovers) return;
-    
-    setIsRefreshingCovers(true);
-    setError(null);
-    
-    try {
-      const allNotes = await StorageManager.getAllNotes();
-      
-      // 过滤出需要缓存的笔记（还没有缓存的）
-      const notesToCache = allNotes.filter(note => 
-        note.images && note.images[0] && 
-        !note.cachedImages && 
-        !note.images[0].startsWith('/uploads/') &&
-        note.images[0] !== '无封面'
-      );
-      
-      if (notesToCache.length === 0) {
-        setTimeout(() => {
-          const notification = document.createElement('div');
-          notification.innerHTML = `
-            <div style="
-              position: fixed; 
-              top: 80px; 
-              right: 20px; 
-              background: linear-gradient(135deg, #6b7280, #4b5563); 
-              color: white; 
-              padding: 16px 20px; 
-              border-radius: 12px; 
-              box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-              z-index: 10000;
-              font-family: system-ui, -apple-system, sans-serif;
-              max-width: 320px;
-              animation: slideIn 0.3s ease-out;
-            ">
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="font-size: 20px;">✅</span>
-                <strong>检查完成</strong>
-              </div>
-              <div style="font-size: 14px; opacity: 0.95;">
-                所有笔记都已缓存到浏览器，无需重新缓存
-              </div>
-            </div>
-            <style>
-              @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-              }
-            </style>
-          `;
-          
-          document.body.appendChild(notification);
-          
-          setTimeout(() => {
-            if (notification.parentNode) {
-              notification.style.animation = 'slideIn 0.3s ease-out reverse';
-              setTimeout(() => {
-                document.body.removeChild(notification);
-              }, 300);
-            }
-          }, 3000);
-        }, 100);
-        
-        setIsRefreshingCovers(false);
-        return;
-      }
-      
-      console.log(`💽 开始批量缓存 ${notesToCache.length} 个封面到浏览器...`);
-      setRefreshProgress({ current: 0, total: notesToCache.length });
-      
-      const successCount = { value: 0 };
-      const failCount = { value: 0 };
-      
-      // 逐个缓存封面
-      for (let i = 0; i < notesToCache.length; i++) {
-        const note = notesToCache[i];
-        setRefreshProgress({ current: i + 1, total: notesToCache.length });
-        
-        try {
-          console.log(`💽 缓存封面 (${i + 1}/${notesToCache.length}): ${note.title}`);
-          
-          const cachedUrl = await ImageCacheManager.cacheImage(note.images[0], note.id);
-          
-          if (cachedUrl) {
-            // 更新localStorage，添加浏览器缓存路径
-            note.cachedImages = [cachedUrl];
-            await StorageManager.saveNote(note);
-            
-            // 更新界面状态
-            setSavedNotes(prev => prev.map(n => 
-              n.id === note.id ? { ...n, cover: cachedUrl } : n
-            ));
-            
-            // 强制刷新图片显示
-            forceRefreshImage(note.id, cachedUrl, 200 * i);
-            
-            successCount.value++;
-            console.log(`✅ 封面缓存成功: ${note.title}`);
-          } else {
-            console.warn(`封面缓存失败: ${note.title}`);
-            failCount.value++;
-          }
-          
-          // 避免请求过于频繁
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-        } catch (error) {
-          console.error(`封面缓存失败: ${note.title}`, error);
-          failCount.value++;
-        }
-      }
-      
-      // 显示完成通知
-      setTimeout(() => {
-        const notification = document.createElement('div');
-        notification.innerHTML = `
-          <div style="
-            position: fixed; 
-            top: 80px; 
-            right: 20px; 
-            background: linear-gradient(135deg, #10b981, #059669); 
-            color: white; 
-            padding: 16px 20px; 
-            border-radius: 12px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            z-index: 10000;
-            font-family: system-ui, -apple-system, sans-serif;
-            max-width: 320px;
-            animation: slideIn 0.3s ease-out;
-          ">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-              <span style="font-size: 20px;">💽</span>
-              <strong>缓存完成</strong>
-            </div>
-            <div style="font-size: 14px; opacity: 0.95; margin-bottom: 4px;">
-              成功缓存 ${successCount.value} 个封面
-            </div>
-            ${failCount.value > 0 ? `<div style="font-size: 12px; opacity: 0.8;">失败 ${failCount.value} 个</div>` : ''}
-          </div>
-          <style>
-            @keyframes slideIn {
-              from { transform: translateX(100%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-          </style>
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // 播放成功音效
-        playNotificationSound();
-        
-        setTimeout(() => {
-          if (notification.parentNode) {
-            notification.style.animation = 'slideIn 0.3s ease-out reverse';
-            setTimeout(() => {
-              document.body.removeChild(notification);
-            }, 300);
-          }
-        }, 5000);
-      }, 500);
-      
-      console.log(`🎉 批量缓存完成! 成功: ${successCount.value}, 失败: ${failCount.value}`);
-      
-    } catch (error) {
-      console.error('批量缓存过程中出现错误:', error);
-      setError('批量缓存失败，请稍后重试');
-    } finally {
-      setIsRefreshingCovers(false);
-      setRefreshProgress({ current: 0, total: 0 });
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 全局加载进度条 */}
-      {(isLoading || isRefreshingCovers) && (
+      {(isLoading) && (
         <div className="fixed top-0 left-0 right-0 z-50">
           <div className="bg-gradient-to-r from-red-400 to-pink-400 h-1 relative overflow-hidden">
             <div className="absolute inset-0 bg-white/30" 
@@ -2153,10 +977,7 @@ export default function XHSExtractor() {
               <div className="flex items-center justify-center gap-3 text-sm text-gray-700">
                 <div className="animate-spin h-4 w-4 border-2 border-red-500 border-t-transparent rounded-full"></div>
                 <span className="font-medium">
-                  {isRefreshingCovers 
-                    ? `正在批量处理... (${refreshProgress.current}/${refreshProgress.total})`
-                    : (loadingStage || '正在处理...')
-                  }
+                  {loadingStage || '正在处理...'}
                 </span>
               </div>
             </div>
@@ -2176,29 +997,6 @@ export default function XHSExtractor() {
           <div className="ml-12 mt-1">
             <span className="text-xs text-gray-400 font-normal tracking-wide leading-tight">发现红书爆款，收藏你的专属灵感</span>
           </div>
-          {savedNotes.length > 0 && (
-            <div className="absolute top-6 right-8">
-              <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDataManagement(true)}
-                  className="text-gray-500 hover:text-blue-500"
-                >
-                  💾 备份恢复
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleShowClearAllConfirm}
-                  className="text-gray-500 hover:text-red-500"
-                >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  清空收藏
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -2238,26 +1036,10 @@ export default function XHSExtractor() {
           </div>
         </div>
 
-        {/* 顶部导航栏功能按钮 */}
+        {/* 顶部导航栏功能按钮 - 已移除刷新封面按钮 */}
         <div className="absolute top-6 right-8">
           <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={refreshMissingCovers}
-              disabled={isRefreshingCovers}
-              className="text-gray-500 hover:text-green-500"
-              title="重新提取丢失的封面"
-            >
-              {isRefreshingCovers ? (
-                <>
-                  <div className="animate-spin h-3 w-3 border border-green-500 border-t-transparent rounded-full mr-1"></div>
-                  📷 提取中 {refreshProgress.current}/{refreshProgress.total}
-                </>
-              ) : (
-                <>📷 刷新封面</>
-              )}
-            </Button>
+            {/* 这里之前是刷新封面按钮 */}
           </div>
         </div>
 
@@ -2319,8 +1101,69 @@ export default function XHSExtractor() {
               </p>
             </div>
           ) : (
-            <div className="notes-grid">
-              {filteredNotes.map((note) => renderNoteCard(note))}
+            <div className="notes-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {filteredNotes.map((note) => (
+                <div
+                  key={note.id}
+                  className="bg-white rounded-2xl shadow-sm overflow-hidden group hover:shadow-md transition-shadow"
+                >
+                  <div className="relative aspect-[3/4]">
+                    <img
+                      src={note.cover}
+                      alt={note.title}
+                      className="w-full h-full object-cover cursor-pointer"
+                      onClick={() => openNote(note.url)}
+                      loading="lazy"
+                    />
+                    {/* 操作按钮浮层 */}
+                    <div className="absolute top-0 right-0 p-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleShowDeleteConfirm(note)}
+                        className="h-8 w-8 bg-black/40 hover:bg-black/60 text-white rounded-full"
+                        title="删除笔记"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openNote(note.url)}
+                        className="h-8 w-8 bg-black/40 hover:bg-black/60 text-white rounded-full"
+                        title="打开原笔记"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  {/* 标题和标签区域 */}
+                  <div className="p-3">
+                    <div className="text-gray-900 text-sm font-medium line-clamp-2 mb-2">
+                      {note.title}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {note.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center bg-red-50 text-red-600 text-xs px-2 py-0.5 rounded-full"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditTags(note)}
+                        className="h-6 w-6 text-gray-400 hover:text-red-500 ml-0.5"
+                        title="编辑标签"
+                      >
+                        <Tag className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -2351,23 +1194,6 @@ export default function XHSExtractor() {
         onClose={handleCancelDelete}
         onConfirm={handleConfirmDelete}
         noteTitle={deletingNote?.title || ''}
-      />
-
-      {/* 清空确认弹窗 */}
-      <ClearAllConfirmModal
-        isOpen={showClearAllModal}
-        onClose={handleCancelClearAll}
-        onConfirm={handleConfirmClearAll}
-        notesCount={savedNotes.length}
-      />
-
-      {/* 数据管理弹窗 */}
-      <DataManagementModal
-        isOpen={showDataManagement}
-        onClose={() => setShowDataManagement(false)}
-        onExport={handleExportData}
-        onImport={handleImportData}
-        notesCount={savedNotes.length}
       />
     </div>
   );
