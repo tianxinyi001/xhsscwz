@@ -259,7 +259,9 @@ export default function XHSExtractor() {
     }));
     setSavedNotes(simpleNotes);
     
-    const tags = [...new Set(notes.flatMap(note => note.tags))];
+    // 修复 Set 迭代问题
+    const tagsSet = new Set(notes.flatMap(note => note.tags));
+    const tags = Array.from(tagsSet);
     setAllTags(tags);
   }, []);
 
@@ -418,7 +420,9 @@ export default function XHSExtractor() {
       }));
       setSavedNotes(simpleNotes);
       
-      const uniqueTags = [...new Set([...allTags, ...selectedTags])];
+      // 修复 Set 迭代问题
+      const uniqueTagsSet = new Set([...allTags, ...selectedTags]);
+      const uniqueTags = Array.from(uniqueTagsSet);
       setAllTags(uniqueTags);
 
       setCurrentNote(null);
@@ -466,7 +470,9 @@ export default function XHSExtractor() {
       }));
       setSavedNotes(simpleNotes);
       
-      const tags = [...new Set(notes.flatMap(note => note.tags))];
+      // 修复 Set 迭代问题
+      const tagsSet = new Set(notes.flatMap(note => note.tags));
+      const tags = Array.from(tagsSet);
       setAllTags(tags);
       
     } catch (error) {
