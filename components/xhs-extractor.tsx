@@ -594,46 +594,33 @@ export default function XHSExtractor() {
         setIsLoadingData(true);
         setLoadingStage('正在加载数据...');
         
-        // 首先尝试迁移本地数据到数据库
+        // 步骤1: 检查并执行一次性的数据迁移（仅在首次使用时）
         await StorageManager.migrateFromLocalStorage();
         
-        // 从数据库加载所有笔记
+        // 步骤2: 从数据库加载所有笔记（每次启动都需要）
+        setLoadingStage('正在获取收藏笔记...');
         const notes = await StorageManager.getAllNotes();
         const simpleNotes = notes.map(note => ({
-          id: note.id,
-          title: note.title,
-          cover: note.images[0] || '',
-          url: note.url || '',
-          tags: note.tags || [],
-          extractedAt: note.extractedAt
-        }));
+      id: note.id,
+      title: note.title,
+      cover: note.images[0] || '',
+      url: note.url || '',
+      tags: note.tags || [],
+      extractedAt: note.extractedAt
+    }));
         
         setSavedNotes(simpleNotes);
         
-        // 提取所有已存在的标签
+        // 步骤3: 初始化标签系统
+        setLoadingStage('正在加载标签...');
         const existingTags = Array.from(new Set(simpleNotes.flatMap(note => note.tags)));
-        setAllTags(existingTags);
+    setAllTags(existingTags);
+    
+        setLoadingStage('加载完成');
+        console.log('✅ 应用初始化完成，共加载', simpleNotes.length, '篇笔记');
         
-        setLoadingStage('数据加载完成');
-        console.log('✅ 数据初始化完成，共加载', simpleNotes.length, '篇笔记');
-        
-        // 批量修复历史数据中的图片URL - 延迟执行以确保界面已渲染
-        setTimeout(() => {
-          fixHistoricalImageUrls(simpleNotes);
-        }, 500);
-
-        // 启动图片健康检查 - 检测失效的图片链接
-        setTimeout(() => {
-          performImageHealthCheck(simpleNotes);
-        }, 1000);
-
-        // 清理过期的浏览器缓存
-        setTimeout(() => {
-          ImageCacheManager.cleanExpiredCache();
-        }, 2000);
-        
-      } catch (error) {
-        console.error('❌ 数据初始化失败:', error);
+    } catch (error) {
+        console.error('❌ 应用初始化失败:', error);
         setError('数据加载失败，请刷新页面重试');
       } finally {
         setIsLoadingData(false);
@@ -643,137 +630,6 @@ export default function XHSExtractor() {
     
     initializeData();
   }, []);
-
-  // 批量修复历史数据中的图片URL
-  const fixHistoricalImageUrls = async (notes: SimpleNote[]) => {
-    try {
-      let hasUpdates = false;
-      const fixedNotes: { title: string; originalUrl: string; fixedUrl: string }[] = [];
-      
-      console.log('🔧 开始检查需要修复的图片URL...');
-      
-      for (const note of notes) {
-        try {
-          if (note.cover && note.cover.includes('xhscdn.com')) {
-            let needsFix = false;
-            let fixedUrl = note.cover;
-            
-            // 检查是否需要修复
-            if (!note.cover.startsWith('/api/image-proxy')) {
-              needsFix = true;
-              
-              // 确保使用HTTPS
-              if (fixedUrl.startsWith('http://')) {
-                fixedUrl = fixedUrl.replace('http://', 'https://');
-              }
-              
-              // 转换为代理URL
-              fixedUrl = `/api/image-proxy?url=${encodeURIComponent(fixedUrl)}`;
-            }
-            
-            if (needsFix) {
-              // 更新数据库中的数据
-              const existingNote = await StorageManager.getNoteById(note.id);
-              if (existingNote && existingNote.images && existingNote.images.length > 0) {
-                const originalImageUrl = existingNote.images[0];
-                existingNote.images[0] = fixedUrl;
-                await StorageManager.saveNote(existingNote);
-                
-                // 标记需要更新界面
-                hasUpdates = true;
-                note.cover = fixedUrl;
-                
-                fixedNotes.push({
-                  title: note.title,
-                  originalUrl: originalImageUrl,
-                  fixedUrl: fixedUrl
-                });
-                
-                console.log(`✅ 修复: ${note.title}`, {
-                  原始: originalImageUrl,
-                  修复后: fixedUrl.substring(0, 80) + '...'
-                });
-              }
-            }
-          }
-        } catch (noteError) {
-          console.error(`修复笔记失败: ${note.title}`, noteError);
-        }
-      }
-      
-      // 如果有更新，刷新界面并提示用户
-      if (hasUpdates) {
-        setSavedNotes([...notes]);
-        console.log(`🎉 批量修复完成！已修复 ${fixedNotes.length} 篇笔记的图片显示问题`);
-        
-        // 显示详细的修复报告
-        console.group('📋 详细修复报告');
-        fixedNotes.forEach((item, index) => {
-          console.log(`${index + 1}. ${item.title.substring(0, 30)}...`);
-        });
-        console.groupEnd();
-        
-        // 显示用户友好的通知
-        setTimeout(() => {
-          const notification = document.createElement('div');
-          notification.innerHTML = `
-            <div style="
-              position: fixed; 
-              top: 80px; 
-              right: 20px; 
-              background: linear-gradient(135deg, #4ade80, #22c55e); 
-              color: white; 
-              padding: 16px 20px; 
-              border-radius: 12px; 
-              box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-              z-index: 10000;
-              font-family: system-ui, -apple-system, sans-serif;
-              max-width: 320px;
-              animation: slideIn 0.3s ease-out;
-            ">
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="font-size: 20px;">🔧</span>
-                <strong>图片修复完成</strong>
-              </div>
-              <div style="font-size: 14px; opacity: 0.95;">
-                成功修复 ${fixedNotes.length} 篇笔记的封面显示问题
-              </div>
-              <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">
-                现在所有图片都能正常显示了 ✨
-              </div>
-            </div>
-            <style>
-              @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-              }
-            </style>
-          `;
-          
-          document.body.appendChild(notification);
-          
-          // 播放成功音效
-          playNotificationSound();
-          
-          // 5秒后自动移除通知
-          setTimeout(() => {
-            if (notification.parentNode) {
-              notification.style.animation = 'slideIn 0.3s ease-out reverse';
-              setTimeout(() => {
-                document.body.removeChild(notification);
-              }, 300);
-            }
-          }, 5000);
-        }, 1000);
-        
-      } else {
-        console.log('✅ 图片URL检查完成，无需修复');
-      }
-      
-    } catch (error) {
-      console.error('❌ 图片URL修复失败:', error);
-    }
-  };
 
   // 创建新标签
   const handleCreateTag = (tag: string) => {
@@ -869,7 +725,7 @@ export default function XHSExtractor() {
     setLoadingStage('正在解析链接...');
     setError(null);
     setShowTagModal(false);
-    
+
     try {
       // 从用户输入中提取正确的URL
       const extractedUrl = extractXHSUrl(url);
@@ -889,7 +745,7 @@ export default function XHSExtractor() {
       });
 
       setLoadingStage('正在处理数据...');
-      
+
       const result: ApiResponse = await response.json();
 
       if (!result.success) {
@@ -996,7 +852,7 @@ export default function XHSExtractor() {
   const handleDeleteNote = async (id: string) => {
     try {
       await StorageManager.deleteNote(id);
-      setSavedNotes(prev => prev.filter(note => note.id !== id));
+    setSavedNotes(prev => prev.filter(note => note.id !== id));
     } catch (error) {
       console.error('删除笔记失败:', error);
       setError('删除笔记失败，请稍后重试');
@@ -1074,10 +930,10 @@ export default function XHSExtractor() {
         await StorageManager.deleteNote(deletingNote.id);
         
         // 5. 更新界面状态
-        setSavedNotes(prev => prev.filter(note => note.id !== deletingNote.id));
-        
+      setSavedNotes(prev => prev.filter(note => note.id !== deletingNote.id));
+      
         // 6. 播放删除音效
-        playDeleteSound();
+      playDeleteSound();
         
         console.log('✅ 笔记和图片删除完成:', deletingNote.title);
         
@@ -1210,13 +1066,13 @@ export default function XHSExtractor() {
       await StorageManager.clearAllNotes();
       
       // 5. 更新界面状态
-      setSavedNotes([]);
-      setAllTags([]);
-      setFilterTag(null);
-      setShowClearAllModal(false);
-      
+    setSavedNotes([]);
+    setAllTags([]);
+    setFilterTag(null);
+    setShowClearAllModal(false);
+    
       // 6. 播放删除音效
-      playDeleteSound();
+    playDeleteSound();
       
       console.log('✅ 所有收藏和图片清空完成！');
       
@@ -1437,198 +1293,45 @@ export default function XHSExtractor() {
 
   // 单个笔记重新提取封面
   const refreshSingleCover = async (noteId: string) => {
-    const note = savedNotes.find(n => n.id === noteId);
-    if (!note || !note.url) {
-      console.error('找不到笔记或URL为空:', noteId);
-      setError('找不到笔记信息');
-      return;
-    }
+    // 删除此函数及其后面所有辅助功能函数
+  };
 
-    if (refreshingSingleId === noteId) {
-      console.log('该笔记正在刷新中，跳过重复请求');
-      return;
-    }
-
-    setRefreshingSingleId(noteId);
-    setError(null);
-
+  // 下载并保存图片到永久存储
+  async function downloadAndSaveImage(imageUrl: string, noteId: string): Promise<string | null> {
     try {
-      console.log(`🔄 开始重新提取单个封面: ${note.title}`);
+      console.log('开始保存图片到永久存储:', { imageUrl, noteId });
       
-      // 显示开始提示
-      const startNotification = document.createElement('div');
-      startNotification.innerHTML = `
-        <div style="
-          position: fixed; 
-          top: 80px; 
-          right: 20px; 
-          background: linear-gradient(135deg, #3b82f6, #1d4ed8); 
-          color: white; 
-          padding: 12px 16px; 
-          border-radius: 8px; 
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          z-index: 10000;
-          font-family: system-ui, -apple-system, sans-serif;
-          font-size: 14px;
-          animation: slideIn 0.3s ease-out;
-        ">
-          🔄 正在重新提取封面...
-        </div>
-        <style>
-          @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-          }
-        </style>
-      `;
-      document.body.appendChild(startNotification);
-      
-      const extractedUrl = extractXHSUrl(note.url || '');
-      console.log('提取的URL:', extractedUrl);
-      
-      if (!extractedUrl || !isValidXHSUrl(extractedUrl)) {
-        throw new Error(`无效的URL: ${note.url}`);
-      }
-      
-      const response = await fetch('/api/extract', {
+      const response: Response = await fetch('/api/permanent-images', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url: extractedUrl, quickPreview: true }),
+        body: JSON.stringify({ imageUrl, noteId }),
       });
       
-      console.log('API响应状态:', response.status);
+      console.log('收到服务器响应:', response.status);
       
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API调用失败: ${response.status} - ${errorText}`);
+        console.error('保存图片失败:', { status: response.status, error: errorText });
+        throw new Error(`保存图片失败: ${response.status}`);
       }
       
       const result = await response.json();
-      console.log('API返回结果:', result);
+      console.log('服务器返回结果:', result);
       
-      // 移除开始提示
-      if (startNotification.parentNode) {
-        document.body.removeChild(startNotification);
+      if (!result.success) {
+        console.error('保存图片失败:', result.error);
+        throw new Error(result.error || '保存图片失败');
       }
-      
-      if (result.success && result.data && result.data.cover && result.data.cover !== '无封面') {
-        const updatedCover = result.data.cover;
-        console.log('获取到新封面:', updatedCover);
-        
-        // 更新localStorage
-        const existingNote = await StorageManager.getNoteById(noteId);
-        if (existingNote) {
-          existingNote.images[0] = updatedCover;
-          // 保存原始URL（如果不是代理URL）
-          if (!updatedCover.startsWith('/api/image-proxy')) {
-            existingNote.originalImages = [updatedCover];
-          }
-          await StorageManager.saveNote(existingNote);
-          console.log('已更新localStorage');
-        }
-        
-        // 更新界面状态
-        setSavedNotes(prev => prev.map(n => 
-          n.id === noteId ? { ...n, cover: updatedCover } : n
-        ));
-        
-        // 立即更新对应的图片元素，强制重新加载
-        forceRefreshImage(noteId, updatedCover, 100);
-        
-        console.log(`✅ 单个封面更新成功: ${note.title}`);
-        
-        // 显示成功通知
-        const successNotification = document.createElement('div');
-        successNotification.innerHTML = `
-          <div style="
-            position: fixed; 
-            top: 80px; 
-            right: 20px; 
-            background: linear-gradient(135deg, #10b981, #059669); 
-            color: white; 
-            padding: 12px 16px; 
-            border-radius: 8px; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 10000;
-            font-family: system-ui, -apple-system, sans-serif;
-            font-size: 14px;
-            animation: slideIn 0.3s ease-out;
-          ">
-            ✅ 封面更新成功！
-          </div>
-          <style>
-            @keyframes slideIn {
-              from { transform: translateX(100%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-          </style>
-        `;
-        document.body.appendChild(successNotification);
-        
-        // 播放成功音效
-        playNotificationSound();
-        
-        // 3秒后移除成功通知
-        setTimeout(() => {
-          if (successNotification.parentNode) {
-            successNotification.style.animation = 'slideIn 0.3s ease-out reverse';
-            setTimeout(() => {
-              document.body.removeChild(successNotification);
-            }, 300);
-          }
-        }, 3000);
-        
-      } else {
-        throw new Error(`无法获取有效封面: ${JSON.stringify(result)}`);
-      }
+
+      console.log('图片保存成功:', result.imageUrl);
+      return result.imageUrl;
     } catch (error) {
-      console.error(`单个封面提取失败: ${note.title}`, error);
-      
-      // 显示错误通知
-      const errorNotification = document.createElement('div');
-      errorNotification.innerHTML = `
-        <div style="
-          position: fixed; 
-          top: 80px; 
-          right: 20px; 
-          background: linear-gradient(135deg, #ef4444, #dc2626); 
-          color: white; 
-          padding: 12px 16px; 
-          border-radius: 8px; 
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          z-index: 10000;
-          font-family: system-ui, -apple-system, sans-serif;
-          font-size: 14px;
-          animation: slideIn 0.3s ease-out;
-        ">
-          ❌ 封面提取失败: ${error instanceof Error ? error.message : '未知错误'}
-        </div>
-        <style>
-          @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-          }
-        </style>
-      `;
-      document.body.appendChild(errorNotification);
-      
-      // 5秒后移除错误通知
-      setTimeout(() => {
-        if (errorNotification.parentNode) {
-          errorNotification.style.animation = 'slideIn 0.3s ease-out reverse';
-          setTimeout(() => {
-            document.body.removeChild(errorNotification);
-          }, 300);
-        }
-      }, 5000);
-      
-      setError(`封面提取失败: ${error instanceof Error ? error.message : '未知错误'}`);
-    } finally {
-      setRefreshingSingleId(null);
+      console.error('保存图片失败:', error);
+      return null;
     }
-  };
+  }
 
   // 渲染小红书风格的简化笔记卡片
   const renderNoteCard = (note: SimpleNote) => {
@@ -2208,18 +1911,18 @@ export default function XHSExtractor() {
         if (!fixedUrl && existingNote.url) {
           console.log('尝试重新提取封面...');
           try {
-            const response = await fetch('/api/extract', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
+              const response = await fetch('/api/extract', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
               body: JSON.stringify({ url: existingNote.url, quickPreview: true }),
-            });
-            
-            if (response.ok) {
-              const result = await response.json();
-              if (result.success && result.data && result.data.cover && result.data.cover !== '无封面') {
-                fixedUrl = result.data.cover;
+              });
+              
+              if (response.ok) {
+                const result = await response.json();
+                if (result.success && result.data && result.data.cover && result.data.cover !== '无封面') {
+                  fixedUrl = result.data.cover;
                 console.log('✅ 重新提取成功:', fixedUrl);
               }
             }
@@ -2257,218 +1960,6 @@ export default function XHSExtractor() {
       } catch (error) {
         console.error(`自动修复失败: ${failed.title}`, error);
       }
-    }
-  };
-
-  // 下载并保存图片到永久存储
-  async function downloadAndSaveImage(imageUrl: string, noteId: string): Promise<string | null> {
-    try {
-      console.log('开始保存图片到永久存储:', { imageUrl, noteId });
-      
-      const response: Response = await fetch('/api/permanent-images', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ imageUrl, noteId }),
-      });
-
-      console.log('收到服务器响应:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('保存图片失败:', { status: response.status, error: errorText });
-        throw new Error(`保存图片失败: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log('服务器返回结果:', result);
-      
-      if (!result.success) {
-        console.error('保存图片失败:', result.error);
-        throw new Error(result.error || '保存图片失败');
-      }
-
-      console.log('图片保存成功:', result.imageUrl);
-      return result.imageUrl;
-    } catch (error) {
-      console.error('保存图片失败:', error);
-      return null;
-    }
-  }
-
-  // 批量下载所有封面到本地
-  const downloadAllCoversToLocal = async () => {
-    if (isRefreshingCovers) return;
-    
-    setIsRefreshingCovers(true);
-    setError(null);
-    
-    try {
-      const allNotes = await StorageManager.getAllNotes();
-      
-      // 过滤出需要下载的笔记（还没有本地图片的）
-      const notesToDownload = allNotes.filter(note => 
-        note.images && note.images[0] && 
-        !note.localImages && 
-        !note.images[0].startsWith('/uploads/') &&
-        note.images[0] !== '无封面'
-      );
-      
-      if (notesToDownload.length === 0) {
-        setTimeout(() => {
-          const notification = document.createElement('div');
-          notification.innerHTML = `
-            <div style="
-              position: fixed; 
-              top: 80px; 
-              right: 20px; 
-              background: linear-gradient(135deg, #6b7280, #4b5563); 
-              color: white; 
-              padding: 16px 20px; 
-              border-radius: 12px; 
-              box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-              z-index: 10000;
-              font-family: system-ui, -apple-system, sans-serif;
-              max-width: 320px;
-              animation: slideIn 0.3s ease-out;
-            ">
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="font-size: 20px;">✅</span>
-                <strong>检查完成</strong>
-              </div>
-              <div style="font-size: 14px; opacity: 0.95;">
-                所有封面都已保存到本地，无需重新下载
-              </div>
-            </div>
-            <style>
-              @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-              }
-            </style>
-          `;
-          
-          document.body.appendChild(notification);
-          
-          setTimeout(() => {
-            if (notification.parentNode) {
-              notification.style.animation = 'slideIn 0.3s ease-out reverse';
-              setTimeout(() => {
-                document.body.removeChild(notification);
-              }, 300);
-            }
-          }, 3000);
-        }, 100);
-        
-        setIsRefreshingCovers(false);
-        return;
-      }
-      
-      console.log(`💾 开始批量下载 ${notesToDownload.length} 个封面到本地...`);
-      setRefreshProgress({ current: 0, total: notesToDownload.length });
-      
-      const successCount = { value: 0 };
-      const failCount = { value: 0 };
-      
-      // 逐个下载封面
-      for (let i = 0; i < notesToDownload.length; i++) {
-        const note = notesToDownload[i];
-        setRefreshProgress({ current: i + 1, total: notesToDownload.length });
-        
-        try {
-          console.log(`💾 下载封面 (${i + 1}/${notesToDownload.length}): ${note.title}`);
-          
-          const localUrl = await downloadAndSaveImage(note.images[0], note.id);
-          
-          if (localUrl) {
-            // 更新localStorage，添加本地图片路径
-            note.localImages = [localUrl];
-            await StorageManager.saveNote(note);
-            
-            // 更新界面状态
-            setSavedNotes(prev => prev.map(n => 
-              n.id === note.id ? { ...n, cover: localUrl } : n
-            ));
-            
-            // 强制刷新图片显示
-            forceRefreshImage(note.id, localUrl, 200 * i);
-            
-            successCount.value++;
-            console.log(`✅ 封面下载成功: ${note.title}`);
-          } else {
-            console.warn(`封面下载失败: ${note.title}`);
-            failCount.value++;
-          }
-          
-          // 避免请求过于频繁
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-        } catch (error) {
-          console.error(`封面下载失败: ${note.title}`, error);
-          failCount.value++;
-        }
-      }
-      
-      // 显示完成通知
-      setTimeout(() => {
-        const notification = document.createElement('div');
-        notification.innerHTML = `
-          <div style="
-            position: fixed; 
-            top: 80px; 
-            right: 20px; 
-            background: linear-gradient(135deg, #10b981, #059669); 
-            color: white; 
-            padding: 16px 20px; 
-            border-radius: 12px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            z-index: 10000;
-            font-family: system-ui, -apple-system, sans-serif;
-            max-width: 320px;
-            animation: slideIn 0.3s ease-out;
-          ">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-              <span style="font-size: 20px;">💾</span>
-              <strong>下载完成</strong>
-            </div>
-            <div style="font-size: 14px; opacity: 0.95; margin-bottom: 4px;">
-              成功下载 ${successCount.value}/${notesToDownload.length} 个封面到本地
-            </div>
-            ${failCount.value > 0 ? `<div style="font-size: 12px; opacity: 0.8;">失败 ${failCount.value} 个</div>` : 
-              `<div style="font-size: 12px; opacity: 0.8;">所有封面已永久保存 🎉</div>`}
-          </div>
-          <style>
-            @keyframes slideIn {
-              from { transform: translateX(100%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-          </style>
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // 播放成功音效
-        playNotificationSound();
-        
-        setTimeout(() => {
-          if (notification.parentNode) {
-            notification.style.animation = 'slideIn 0.3s ease-out reverse';
-            setTimeout(() => {
-              document.body.removeChild(notification);
-            }, 300);
-          }
-        }, 5000);
-      }, 500);
-      
-      console.log(`🎉 批量下载完成! 成功: ${successCount.value}, 失败: ${failCount.value}`);
-      
-    } catch (error) {
-      console.error('批量下载过程中出现错误:', error);
-      setError('批量下载失败，请稍后重试');
-    } finally {
-      setIsRefreshingCovers(false);
-      setRefreshProgress({ current: 0, total: 0 });
     }
   };
 
@@ -2691,59 +2182,6 @@ export default function XHSExtractor() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={refreshMissingCovers}
-                  disabled={isRefreshingCovers}
-                  className="text-gray-500 hover:text-green-500"
-                  title="重新提取丢失的封面"
-                >
-                  {isRefreshingCovers ? (
-                    <>
-                      <div className="animate-spin h-3 w-3 border border-green-500 border-t-transparent rounded-full mr-1"></div>
-                      📷 提取中 {refreshProgress.current}/{refreshProgress.total}
-                    </>
-                  ) : (
-                    <>📷 刷新封面</>
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    console.log('=== 调试信息 ===');
-                    console.log('savedNotes数量:', savedNotes.length);
-                    console.log('refreshingSingleId:', refreshingSingleId);
-                    console.log('缺失封面的笔记:', savedNotes.filter(note => 
-                      !note.cover || note.cover === '无封面' || note.cover === ''
-                    ));
-                    
-                    // 测试第一个无封面的笔记
-                    const testNote = savedNotes.find(note => 
-                      !note.cover || note.cover === '无封面' || note.cover === ''
-                    );
-                    if (testNote) {
-                      console.log('测试笔记:', testNote);
-                      refreshSingleCover(testNote.id);
-                    } else {
-                      console.log('没有找到需要测试的笔记');
-                    }
-                  }}
-                  className="text-gray-500 hover:text-purple-500"
-                  title="调试单个封面提取"
-                >
-                  🐛 调试测试
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => fixHistoricalImageUrls(savedNotes)}
-                  className="text-gray-500 hover:text-orange-500"
-                  title="修复图片显示问题"
-                >
-                  🔧 修复图片
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
                   onClick={() => setShowDataManagement(true)}
                   className="text-gray-500 hover:text-blue-500"
                 >
@@ -2757,35 +2195,6 @@ export default function XHSExtractor() {
                 >
                   <Trash2 className="h-4 w-4 mr-1" />
                   清空收藏
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => performImageHealthCheck(savedNotes)}
-                  className="text-gray-500 hover:text-purple-500"
-                  title="检查图片健康状态"
-                >
-                  🔍 健康检查
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => downloadAllCoversToLocal()}
-                  disabled={isRefreshingCovers}
-                  className="text-gray-500 hover:text-blue-500"
-                  title="下载所有封面到本地"
-                >
-                  💾 本地保存
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => cacheAllImagesToBrowser()}
-                  disabled={isRefreshingCovers}
-                  className="text-gray-500 hover:text-purple-500"
-                  title="缓存所有图片到浏览器"
-                >
-                  💽 浏览器缓存
                 </Button>
               </div>
             </div>

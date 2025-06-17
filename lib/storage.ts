@@ -126,12 +126,21 @@ export class StorageManager {
   // 兼容性方法：从 localStorage 迁移数据到数据库
   static async migrateFromLocalStorage(): Promise<void> {
     try {
+      // 检查是否已经迁移过
+      const migrationCompleted = localStorage.getItem('xhs_migration_completed');
+      if (migrationCompleted === 'true') {
+        console.log('✅ 数据迁移已完成，跳过迁移检查');
+        return;
+      }
+      
       console.log('🔄 开始迁移本地数据到数据库...');
       
       // 检查是否有本地数据
       const localData = localStorage.getItem('xhs_notes');
       if (!localData) {
         console.log('📭 没有本地数据需要迁移');
+        // 标记迁移已完成
+        localStorage.setItem('xhs_migration_completed', 'true');
         return;
       }
       
@@ -147,6 +156,8 @@ export class StorageManager {
       
       if (notesToMigrate.length === 0) {
         console.log('✅ 所有本地数据已存在于数据库中');
+        // 标记迁移已完成
+        localStorage.setItem('xhs_migration_completed', 'true');
         return;
       }
       
@@ -158,6 +169,9 @@ export class StorageManager {
       }
       
       console.log('✅ 数据迁移完成，迁移了', notesToMigrate.length, '篇笔记');
+      
+      // 标记迁移已完成
+      localStorage.setItem('xhs_migration_completed', 'true');
       
       // 询问用户是否清除本地数据
       if (confirm('数据迁移完成！是否清除本地存储的数据？')) {
