@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "verify-config": "node scripts/verify-config.js",
+    "setup": "npm run verify-config && echo '✅ 配置验证完成，可以开始开发了！'"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.0.2",
@@ -14,6 +16,7 @@
     "@supabase/supabase-js": "^2.50.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "dotenv": "^16.6.1",
     "lucide-react": "^0.294.0",
     "next": "14.0.4",
     "react": "^18",

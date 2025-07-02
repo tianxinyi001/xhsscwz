@@ -1,16 +1,38 @@
 import { CozeChatRequest, CozeChatResponse, CozeMessage } from './types';
 
+// 环境变量配置
 const COZE_API_URL = process.env.NEXT_PUBLIC_COZE_API_URL || 'https://api.coze.cn/v3/chat';
-const BOT_ID = process.env.NEXT_PUBLIC_COZE_BOT_ID || '7511177632999342117';
-const API_KEY = process.env.COZE_API_KEY || 'pat_9UEWSBMIFNPeyPudzSY2ceH26GSz2WYmbvKlutYlH6fcH1Zhxy8Ux7IPRc0AmMOZ';
+const BOT_ID = process.env.NEXT_PUBLIC_COZE_BOT_ID;
+const API_KEY = process.env.COZE_API_KEY;
+
+// 配置验证
+if (!API_KEY) {
+  console.error('错误：缺少 COZE_API_KEY 环境变量');
+}
+
+if (!BOT_ID) {
+  console.error('错误：缺少 NEXT_PUBLIC_COZE_BOT_ID 环境变量');
+}
 
 export class CozeClient {
   private apiKey: string;
   private botId: string;
+  private apiUrl: string;
 
   constructor() {
+    if (!API_KEY || !BOT_ID) {
+      throw new Error('Coze API 配置不完整。请检查环境变量：COZE_API_KEY 和 NEXT_PUBLIC_COZE_BOT_ID');
+    }
+    
     this.apiKey = API_KEY;
     this.botId = BOT_ID;
+    this.apiUrl = COZE_API_URL;
+    
+    console.log('Coze Client 初始化成功:', {
+      apiUrl: this.apiUrl,
+      botId: this.botId,
+      hasApiKey: !!this.apiKey
+    });
   }
 
   async extractXHSInfo(url: string, quickPreview: boolean = false): Promise<string> {
@@ -24,23 +46,24 @@ export class CozeClient {
       bot_id: this.botId,
       user_id: `user_${Date.now()}`,
       stream: false,
-      auto_save_history: true, // 始终保存历史，避免流式传输的复杂性
+      auto_save_history: true,
       additional_messages: [message]
     };
 
     console.log('发送请求到 Coze API:', {
-      url: COZE_API_URL,
+      url: this.apiUrl,
       bot_id: this.botId,
       user_message: url
     });
 
     try {
       // 第一步：创建对话
-      const response = await fetch(COZE_API_URL, {
+      const response = await fetch(this.apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'User-Agent': 'XHS-Extractor/1.0.0'
         },
         body: JSON.stringify(requestBody)
       });
@@ -50,6 +73,18 @@ export class CozeClient {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('API 请求失败:', response.status, errorText);
+        
+        // 更具体的错误处理
+        if (response.status === 401) {
+          throw new Error('API Key 无效或已过期，请检查 COZE_API_KEY 配置');
+        } else if (response.status === 403) {
+          throw new Error('API 访问被拒绝，请检查权限配置');
+        } else if (response.status === 404) {
+          throw new Error('Bot ID 不存在，请检查 NEXT_PUBLIC_COZE_BOT_ID 配置');
+        } else if (response.status === 429) {
+          throw new Error('API 调用频率超限，请稍后重试');
+        }
+        
         throw new Error(`API 请求失败: ${response.status} ${response.statusText}. 响应: ${errorText}`);
       }
 
@@ -100,7 +135,8 @@ export class CozeClient {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'User-Agent': 'XHS-Extractor/1.0.0'
           }
         });
 
@@ -143,7 +179,8 @@ export class CozeClient {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'User-Agent': 'XHS-Extractor/1.0.0'
         }
       });
 
