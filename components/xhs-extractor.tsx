@@ -8,6 +8,7 @@ import { StoredNote } from '@/lib/types';
 import { generateId, isValidXHSUrl, extractXHSUrl } from '@/lib/utils';
 import { ImageCacheManager } from '@/lib/image-cache';
 import { Trash2, ExternalLink, Plus, Tag, X } from 'lucide-react';
+import Link from 'next/link';
 
 interface ApiResponse {
   success: boolean;
@@ -1036,10 +1037,20 @@ export default function XHSExtractor() {
           </div>
         </div>
 
-        {/* 顶部导航栏功能按钮 - 已移除刷新封面按钮 */}
+        {/* 顶部导航栏功能按钮 */}
         <div className="absolute top-6 right-8">
           <div className="flex gap-2">
-            {/* 这里之前是刷新封面按钮 */}
+            <Link href="/tags">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-600 hover:text-red-600 hover:bg-red-50"
+                title="标签管理"
+              >
+                <Tag className="h-4 w-4 mr-1" />
+                标签管理
+              </Button>
+            </Link>
           </div>
         </div>
 
