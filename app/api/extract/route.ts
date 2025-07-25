@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       }
       
       const quickData = {
-        title: dataSource.title || parsedData.title || '未提取到标题',
+        title: cleanText(dataSource.title || parsedData.title || '未提取到标题'),
         cover: coverUrl,
         noteId: noteId,
         url: url
@@ -65,9 +65,9 @@ export async function POST(request: NextRequest) {
 
     // 完整模式：返回所有信息（保持兼容性）
     const normalizedData = {
-      title: dataSource.title || parsedData.title || '未提取到标题',
+      title: cleanText(dataSource.title || parsedData.title || '未提取到标题'),
       author: dataSource.author || '未知作者',
-      content: dataSource.content || dataSource.desc || '无内容',
+      content: cleanText(dataSource.content || dataSource.desc || '无内容'),
       cover: (() => {
         let cover = dataSource.cover || (dataSource.imageList && dataSource.imageList[0]?.urlDefault);
         // 将HTTP链接转换为HTTPS
@@ -123,4 +123,11 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+} 
+
+function cleanText(text: any): string {
+  if (!text) return '';
+  return String(text)
+    .replace(/^[\u200B-\u200D\uFEFF]+|[\u200B-\u200D\uFEFF]+$/g, '') // 零宽字符
+    .replace(/^\s+|\s+$/g, ''); // 普通空白
 } 

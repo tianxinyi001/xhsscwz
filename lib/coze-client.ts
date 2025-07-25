@@ -256,50 +256,62 @@ export class CozeClient {
 
   // 解析AI返回的结构化数据
   parseXHSResponse(response: string): any {
+    function cleanText(text: any): string {
+      if (!text) return '';
+      // 去除前后不可见字符（零宽、BOM等）和空白，保留 emoji
+      return String(text)
+        .replace(/^[\u200B-\u200D\uFEFF]+|[\u200B-\u200D\uFEFF]+$/g, '') // 零宽字符
+        .replace(/^\s+|\s+$/g, ''); // 普通空白
+    }
     try {
       console.log('开始解析响应:', response);
-      
       // 尝试直接解析JSON
       if (response.trim().startsWith('{')) {
         const parsed = JSON.parse(response);
         console.log('解析后的数据:', parsed);
-        
         // 如果有output字段，将其内容提升到顶级
         if (parsed.output) {
           console.log('找到output字段:', parsed.output);
           return {
             ...parsed,
-            ...parsed.output  // 将output中的内容合并到顶级
+            ...parsed.output,  // 将output中的内容合并到顶级
+            title: cleanText(parsed.output.title || parsed.title),
+            content: cleanText(parsed.output.content || parsed.content)
           };
         }
-        
-        return parsed;
+        return {
+          ...parsed,
+          title: cleanText(parsed.title),
+          content: cleanText(parsed.content)
+        };
       }
-      
       // 如果不是JSON格式，尝试提取JSON部分
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         console.log('从文本中提取的JSON:', parsed);
-        
         // 如果有output字段，将其内容提升到顶级
         if (parsed.output) {
           console.log('找到output字段:', parsed.output);
           return {
             ...parsed,
-            ...parsed.output  // 将output中的内容合并到顶级
+            ...parsed.output,  // 将output中的内容合并到顶级
+            title: cleanText(parsed.output.title || parsed.title),
+            content: cleanText(parsed.output.content || parsed.content)
           };
         }
-        
-        return parsed;
+        return {
+          ...parsed,
+          title: cleanText(parsed.title),
+          content: cleanText(parsed.content)
+        };
       }
-      
       // 如果没有找到JSON，返回原始响应
       console.log('未找到JSON，返回原始响应');
-      return { content: response };
+      return { content: cleanText(response) };
     } catch (error) {
       console.error('解析响应失败:', error);
-      return { content: response };
+      return { content: cleanText(response) };
     }
   }
 } 
