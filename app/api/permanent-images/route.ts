@@ -45,6 +45,12 @@ export async function POST(request: NextRequest) {
       hasSupabaseUrl: Boolean(supabaseUrl),
       hasAnonKey: Boolean(supabaseAnonKey),
     });
+    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+    if (bucketsError) {
+      console.warn('permanent-images buckets list error:', bucketsError.message);
+    } else {
+      console.log('permanent-images buckets:', (buckets || []).map(bucket => bucket.name));
+    }
 
     if (!imageUrl || !noteId) {
       return NextResponse.json({ success: false, error: 'Missing required params' }, { status: 400 });
