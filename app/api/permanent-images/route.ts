@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
-const bucketName = process.env.NEXT_PUBLIC_SUPABASE_IMAGE_BUCKET ?? 'covers';
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
+const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '').trim();
+const bucketName = (process.env.NEXT_PUBLIC_SUPABASE_IMAGE_BUCKET ?? 'covers').trim();
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -40,6 +40,11 @@ async function fetchImageBuffer(imageUrl: string) {
 export async function POST(request: NextRequest) {
   try {
     const { imageUrl, noteId } = await request.json();
+    console.log('permanent-images config:', {
+      bucketName,
+      hasSupabaseUrl: Boolean(supabaseUrl),
+      hasAnonKey: Boolean(supabaseAnonKey),
+    });
 
     if (!imageUrl || !noteId) {
       return NextResponse.json({ success: false, error: 'Missing required params' }, { status: 400 });
