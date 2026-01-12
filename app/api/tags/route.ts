@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readNotes, writeNotes } from '@/lib/local-notes';
+import { supabase } from '@/lib/supabase';
 
 type TagStats = {
   name: string;
@@ -7,14 +7,20 @@ type TagStats = {
   noteIds: string[];
 };
 
-// GET - fetch tag stats from local JSON
 export async function GET() {
   try {
-    const notes = await readNotes();
+    const { data: notes, error } = await supabase
+      .from('notes')
+      .select('id, tags');
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
     const tagStats = new Map<string, { count: number; noteIds: string[] }>();
 
-    notes.forEach(note => {
-      (note.tags || []).forEach(tag => {
+    (notes || []).forEach(note => {
+      (note.tags || []).forEach((tag: string) => {
         if (!tagStats.has(tag)) {
           tagStats.set(tag, { count: 0, noteIds: [] });
         }
@@ -32,12 +38,13 @@ export async function GET() {
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error('Failed to load tag stats:', error);
-    return NextResponse.json({ success: false, error: 'Failed to load tag stats' }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to load tags' },
+      { status: 500 }
+    );
   }
 }
 
-// PUT - batch update tags
 export async function PUT(request: NextRequest) {
   try {
     const { action, oldTag, newTag, noteIds } = await request.json();
@@ -46,15 +53,16 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing required params' }, { status: 400 });
     }
 
-    const notes = await readNotes();
-    const noteIdSet = new Set<string>(noteIds || []);
-    const updatedNotes: { id: string; tags: string[] }[] = [];
+    const { data: notes, error: fetchError } = await supabase
+      .from('notes')
+      .select('id, tags')
+      .in('id', noteIds || []);
 
-    notes.forEach(note => {
-      if (!noteIdSet.has(note.id)) {
-        return;
-      }
+    if (fetchError) {
+      return NextResponse.json({ success: false, error: fetchError.message }, { status: 500 });
+    }
 
+    const updatePromises = (notes || []).map(async note => {
       let updatedTags = [...(note.tags || [])];
 
       switch (action) {
@@ -62,16 +70,16 @@ export async function PUT(request: NextRequest) {
           if (!newTag) {
             throw new Error('Rename requires newTag');
           }
-          updatedTags = updatedTags.map(tag => (tag === oldTag ? newTag : tag));
+          updatedTags = updatedTags.map((tag: string) => (tag === oldTag ? newTag : tag));
           break;
         case 'delete':
-          updatedTags = updatedTags.filter(tag => tag !== oldTag);
+          updatedTags = updatedTags.filter((tag: string) => tag !== oldTag);
           break;
         case 'merge':
           if (!newTag) {
             throw new Error('Merge requires newTag');
           }
-          updatedTags = updatedTags.filter(tag => tag !== oldTag);
+          updatedTags = updatedTags.filter((tag: string) => tag !== oldTag);
           if (!updatedTags.includes(newTag)) {
             updatedTags.push(newTag);
           }
@@ -80,11 +88,19 @@ export async function PUT(request: NextRequest) {
           throw new Error('Unsupported action');
       }
 
-      note.tags = updatedTags;
-      updatedNotes.push({ id: note.id, tags: updatedTags });
+      const { error: updateError } = await supabase
+        .from('notes')
+        .update({ tags: updatedTags })
+        .eq('id', note.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      return { id: note.id, tags: updatedTags };
     });
 
-    await writeNotes(notes);
+    const results = await Promise.all(updatePromises);
 
     return NextResponse.json({
       success: true,
@@ -92,12 +108,11 @@ export async function PUT(request: NextRequest) {
         action,
         oldTag,
         newTag,
-        updatedNotes: updatedNotes.length,
-        notes: updatedNotes,
+        updatedNotes: results.length,
+        notes: results,
       },
     });
   } catch (error) {
-    console.error('Failed to update tags:', error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : 'Failed to update tags' },
       { status: 500 }

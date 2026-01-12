@@ -1,30 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
-const PERMANENT_DIR = path.join(process.cwd(), 'public', 'permanent-images');
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const bucketName = process.env.NEXT_PUBLIC_SUPABASE_IMAGE_BUCKET ?? 'covers';
 
-function getExtension(contentType: string | null): string {
-  switch (contentType) {
-    case 'image/png':
-      return '.png';
-    case 'image/webp':
-      return '.webp';
-    case 'image/avif':
-      return '.avif';
-    case 'image/gif':
-      return '.gif';
-    case 'image/jpeg':
-    default:
-      return '.jpg';
-  }
-}
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-function generateUniqueFilename(noteId: string, originalUrl: string, extension: string): string {
+function generateUniqueFilename(noteId: string, originalUrl: string): string {
   const timestamp = Date.now();
   const hash = crypto.createHash('md5').update(originalUrl).digest('hex').slice(0, 8);
-  return `${noteId}_${hash}_${timestamp}${extension}`;
+  return `${noteId}_${hash}_${timestamp}.jpg`;
 }
 
 async function fetchImageBuffer(imageUrl: string) {
@@ -47,16 +34,12 @@ async function fetchImageBuffer(imageUrl: string) {
   }
 
   const arrayBuffer = await response.arrayBuffer();
-  return {
-    buffer: Buffer.from(arrayBuffer),
-    contentType: response.headers.get('content-type'),
-  };
+  return Buffer.from(arrayBuffer);
 }
 
 export async function POST(request: NextRequest) {
   try {
     const { imageUrl, noteId } = await request.json();
-    console.log('Received permanent image request:', { imageUrl, noteId });
 
     if (!imageUrl || !noteId) {
       return NextResponse.json({ success: false, error: 'Missing required params' }, { status: 400 });
@@ -66,20 +49,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'imageUrl must be absolute' }, { status: 400 });
     }
 
-    const { buffer, contentType } = await fetchImageBuffer(imageUrl);
-    const extension = getExtension(contentType);
-    const filename = generateUniqueFilename(noteId, imageUrl, extension);
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json({ success: false, error: 'Supabase env vars missing' }, { status: 500 });
+    }
 
-    await fs.mkdir(PERMANENT_DIR, { recursive: true });
-    await fs.writeFile(path.join(PERMANENT_DIR, filename), buffer);
+    const buffer = await fetchImageBuffer(imageUrl);
+    const filename = generateUniqueFilename(noteId, imageUrl);
 
-    return NextResponse.json({
-      success: true,
-      imageUrl: `/permanent-images/${filename}`,
-      filename,
-    });
+    const { error } = await supabase.storage
+      .from(bucketName)
+      .upload(filename, buffer, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(filename);
+    const publicUrl = publicUrlData?.publicUrl;
+
+    if (!publicUrl) {
+      return NextResponse.json({ success: false, error: 'Failed to get public url' }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, imageUrl: publicUrl, filename });
   } catch (error) {
-    console.error('Permanent image save failed:', error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : 'Save failed' },
       { status: 500 }
@@ -96,20 +92,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing noteId' }, { status: 400 });
     }
 
-    let files: string[] = [];
-    try {
-      files = await fs.readdir(PERMANENT_DIR);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
+    const { data, error } = await supabase.storage.from(bucketName).list();
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    const images = files.filter(file => file.startsWith(`${noteId}_`));
+    const noteImages = (data || []).filter(file => file.name.startsWith(noteId));
 
-    return NextResponse.json({ success: true, images });
+    return NextResponse.json({ success: true, images: noteImages.map(file => file.name) });
   } catch (error) {
-    console.error('Permanent image list failed:', error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : 'List failed' },
       { status: 500 }
@@ -124,12 +115,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing filename' }, { status: 400 });
     }
 
-    try {
-      await fs.unlink(path.join(PERMANENT_DIR, filename));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
+    const { error } = await supabase.storage.from(bucketName).remove([filename]);
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });

@@ -1,11 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://gfwbgnzzvhsmmpwuytjr.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd2Jnbnp6dmhzbW1wd3V5dGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAwNTU1OTgsImV4cCI6MjA2NTYzMTU5OH0.OKSKkIki_BUYcAvgXUiB0AB__dcBtdDBOZOl_EsnrEw';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('Supabase env vars are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+}
 
-// 数据库表结构类型
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
 export interface DatabaseNote {
   id: string;
   title: string;
@@ -23,4 +26,4 @@ export interface DatabaseNote {
   extracted_at: string;
   created_at?: string;
   updated_at?: string;
-} 
+}
