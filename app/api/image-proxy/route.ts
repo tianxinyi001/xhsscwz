@@ -15,7 +15,7 @@ function buildCandidateUrls(url: string): string[] {
     }
   }
 
-  return [...new Set(candidates)];
+  return Array.from(new Set(candidates));
 }
 
 export async function GET(request: NextRequest) {
