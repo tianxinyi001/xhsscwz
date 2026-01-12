@@ -1,133 +1,86 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { CozeClient } from '@/lib/coze-client';
+﻿import { NextRequest, NextResponse } from 'next/server';
+import { extractXhsFromHtml, normalizeImageUrl } from '@/lib/xhs-image-extractor';
+
+const DEFAULT_HEADERS = {
+  'user-agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8'
+};
 
 export async function POST(request: NextRequest) {
   try {
     const { url, quickPreview } = await request.json();
 
     if (!url) {
-      return NextResponse.json(
-        { error: '请提供小红书链接' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing XHS url', success: false }, { status: 400 });
     }
 
-    const cozeClient = new CozeClient();
-    const response = await cozeClient.extractXHSInfo(url, quickPreview);
-    const parsedData = cozeClient.parseXHSResponse(response);
-    
-    // 处理嵌套的output结构
-    const dataSource = parsedData.output || parsedData;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: DEFAULT_HEADERS,
+      cache: 'no-store'
+    });
 
-    // 快速预览模式：只返回基本信息
+    if (!response.ok) {
+      const message = `Failed to fetch page: ${response.status} ${response.statusText}`;
+      return NextResponse.json({ error: message, success: false }, { status: response.status });
+    }
+
+    const html = await response.text();
+    const parsed = extractXhsFromHtml(html, url);
+
+    const cover = parsed.cover ? normalizeImageUrl(parsed.cover) : '';
+    const images = parsed.images.map((item) => normalizeImageUrl(item)).filter(Boolean);
+
     if (quickPreview) {
-      // 优先从output中提取noteId
-      const noteId = dataSource.noteId || parsedData.noteId;
-      
-      console.log('提取的数据:', {
-        title: dataSource.title,
-        noteId: noteId,
-        hasOutput: !!parsedData.output,
-        dataSource: dataSource
-      });
-      
-      // 处理封面链接，确保使用HTTPS
-      let coverUrl = dataSource.cover || 
-                    (dataSource.imageList && dataSource.imageList[0]?.urlPre) ||
-                    (dataSource.imageList && dataSource.imageList[0]?.urlDefault) ||
-                    '无封面';
-      
-      // 将HTTP链接转换为HTTPS
-      if (coverUrl && typeof coverUrl === 'string' && coverUrl.startsWith('http://')) {
-        coverUrl = coverUrl.replace('http://', 'https://');
-      }
-      
-      // 如果是小红书CDN链接，转换为代理URL
-      if (coverUrl && coverUrl !== '无封面' && coverUrl.includes('xhscdn.com')) {
-        coverUrl = `/api/image-proxy?url=${encodeURIComponent(coverUrl)}`;
-      }
-      
-      const quickData = {
-        title: cleanText(dataSource.title || parsedData.title || '未提取到标题'),
-        cover: coverUrl,
-        noteId: noteId,
-        url: url
-      };
-
-      console.log('返回的快速数据:', quickData);
-
       return NextResponse.json({
         success: true,
-        data: quickData,
-        raw: response
+        data: {
+          title: cleanText(parsed.title || 'Untitled'),
+          cover,
+          noteId: parsed.noteId,
+          url
+        },
+        raw: null
       });
     }
-
-    // 完整模式：返回所有信息（保持兼容性）
-    const normalizedData = {
-      title: cleanText(dataSource.title || parsedData.title || '未提取到标题'),
-      author: dataSource.author || '未知作者',
-      content: cleanText(dataSource.content || dataSource.desc || '无内容'),
-      cover: (() => {
-        let cover = dataSource.cover || (dataSource.imageList && dataSource.imageList[0]?.urlDefault);
-        // 将HTTP链接转换为HTTPS
-        if (cover && typeof cover === 'string' && cover.startsWith('http://')) {
-          cover = cover.replace('http://', 'https://');
-        }
-        // 如果是小红书CDN链接，转换为代理URL
-        if (cover && cover.includes('xhscdn.com')) {
-          cover = `/api/image-proxy?url=${encodeURIComponent(cover)}`;
-        }
-        return cover;
-      })(),
-      images: (() => {
-        const images = dataSource.images || (dataSource.imageList?.map((img: any) => img.urlDefault || img.url) || []);
-        // 将所有图片链接转换为HTTPS并使用代理
-        return images.map((img: string) => {
-          if (img && typeof img === 'string') {
-            if (img.startsWith('http://')) {
-              img = img.replace('http://', 'https://');
-            }
-            if (img.includes('xhscdn.com')) {
-              img = `/api/image-proxy?url=${encodeURIComponent(img)}`;
-            }
-          }
-          return img;
-        });
-      })(),
-      tags: dataSource.tags || [],
-      noteId: dataSource.noteId || parsedData.noteId,
-      stats: {
-        likes: dataSource.interactInfo?.likedCount || 0,
-        comments: dataSource.interactInfo?.commentCount || 0,
-        shares: dataSource.interactInfo?.shareCount || 0
-      },
-      publishTime: dataSource.time ? new Date(dataSource.time).toISOString() : null,
-      url: url,
-      ...parsedData // 保留原始数据
-    };
 
     return NextResponse.json({
       success: true,
-      data: normalizedData,
-      raw: response
+      data: {
+        title: cleanText(parsed.title || 'Untitled'),
+        author: '',
+        content: '',
+        cover,
+        images,
+        tags: [],
+        noteId: parsed.noteId,
+        stats: {
+          likes: 0,
+          comments: 0,
+          shares: 0
+        },
+        publishTime: null,
+        url
+      },
+      raw: null
     });
-
   } catch (error) {
-    console.error('API 错误:', error);
+    console.error('Extract API error:', error);
     return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : '提取失败，请稍后重试',
-        success: false 
+      {
+        error: error instanceof Error ? error.message : 'Extract failed',
+        success: false
       },
       { status: 500 }
     );
   }
-} 
+}
 
 function cleanText(text: any): string {
   if (!text) return '';
   return String(text)
-    .replace(/^[\u200B-\u200D\uFEFF]+|[\u200B-\u200D\uFEFF]+$/g, '') // 零宽字符
-    .replace(/^\s+|\s+$/g, ''); // 普通空白
-} 
+    .replace(/^[\u200B-\u200D\uFEFF]+|[\u200B-\u200D\uFEFF]+$/g, '')
+    .replace(/^\s+|\s+$/g, '');
+}

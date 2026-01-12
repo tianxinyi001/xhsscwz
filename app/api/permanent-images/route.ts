@@ -1,78 +1,89 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { promises as fs } from 'fs';
+import path from 'path';
 import crypto from 'crypto';
 
-// Supabase 配置
-const SUPABASE_URL = 'https://gfwbgnzzvhsmmpwuytjr.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd2Jnbnp6dmhzbW1wd3V5dGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAwNTU1OTgsImV4cCI6MjA2NTYzMTU5OH0.OKSKkIki_BUYcAvgXUiB0AB__dcBtdDBOZOl_EsnrEw';
-const BUCKET = 'covers';
+const PERMANENT_DIR = path.join(process.cwd(), 'public', 'permanent-images');
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+function getExtension(contentType: string | null): string {
+  switch (contentType) {
+    case 'image/png':
+      return '.png';
+    case 'image/webp':
+      return '.webp';
+    case 'image/avif':
+      return '.avif';
+    case 'image/gif':
+      return '.gif';
+    case 'image/jpeg':
+    default:
+      return '.jpg';
+  }
+}
 
-function generateUniqueFilename(noteId: string, originalUrl: string): string {
+function generateUniqueFilename(noteId: string, originalUrl: string, extension: string): string {
   const timestamp = Date.now();
   const hash = crypto.createHash('md5').update(originalUrl).digest('hex').slice(0, 8);
-  return `${noteId}_${hash}_${timestamp}.jpg`;
+  return `${noteId}_${hash}_${timestamp}${extension}`;
+}
+
+async function fetchImageBuffer(imageUrl: string) {
+  const response = await fetch(imageUrl, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Referer': 'https://www.xiaohongshu.com/',
+      'Origin': 'https://www.xiaohongshu.com',
+      'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Image download failed: ${response.status}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    contentType: response.headers.get('content-type'),
+  };
 }
 
 export async function POST(request: NextRequest) {
   try {
     const { imageUrl, noteId } = await request.json();
-    console.log('收到保存请求:', { imageUrl, noteId });
+    console.log('Received permanent image request:', { imageUrl, noteId });
 
     if (!imageUrl || !noteId) {
-      return NextResponse.json({ 
-        success: false, 
-        error: '缺少必要参数' 
-      }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Missing required params' }, { status: 400 });
     }
 
     if (!/^https?:\/\//.test(imageUrl)) {
-      return NextResponse.json({
-        success: false,
-        error: 'imageUrl 必须是绝对URL'
-      }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'imageUrl must be absolute' }, { status: 400 });
     }
 
-    // 下载图片
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      throw new Error(`图片下载失败: ${response.status}`);
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const { buffer, contentType } = await fetchImageBuffer(imageUrl);
+    const extension = getExtension(contentType);
+    const filename = generateUniqueFilename(noteId, imageUrl, extension);
 
-    // 上传到 Supabase Storage
-    const filename = generateUniqueFilename(noteId, imageUrl);
-    const { data, error } = await supabase.storage
-      .from(BUCKET)
-      .upload(filename, buffer, {
-        contentType: 'image/jpeg',
-        upsert: true
-      });
-    if (error) {
-      console.error('Supabase 上传失败:', error.message);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    }
+    await fs.mkdir(PERMANENT_DIR, { recursive: true });
+    await fs.writeFile(path.join(PERMANENT_DIR, filename), buffer);
 
-    // 获取公开访问 URL（Public bucket）
-    const { data: publicUrlData } = supabase.storage.from(BUCKET).getPublicUrl(filename);
-    const publicUrl = publicUrlData?.publicUrl;
-    if (!publicUrl) {
-      return NextResponse.json({ success: false, error: '获取公开URL失败' }, { status: 500 });
-    }
-
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
-      imageUrl: publicUrl,
-      filename
+      imageUrl: `/permanent-images/${filename}`,
+      filename,
     });
   } catch (error) {
-    console.error('保存永久图片失败:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error instanceof Error ? error.message : '保存图片失败'
-    }, { status: 500 });
+    console.error('Permanent image save failed:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Save failed' },
+      { status: 500 }
+    );
   }
 }
 
@@ -82,30 +93,27 @@ export async function GET(request: NextRequest) {
     const noteId = searchParams.get('noteId');
 
     if (!noteId) {
-      return NextResponse.json({ 
-        success: false, 
-        error: '缺少noteId参数' 
-      }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Missing noteId' }, { status: 400 });
     }
 
-    // 查找该笔记的所有永久图片
-    const { data, error } = await supabase.storage.from(BUCKET).list();
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    let files: string[] = [];
+    try {
+      files = await fs.readdir(PERMANENT_DIR);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
     }
-    const noteImages = (data || []).filter(file => file.name.startsWith(noteId));
 
-    return NextResponse.json({ 
-      success: true,
-      images: noteImages.map(file => file.name)
-    });
+    const images = files.filter(file => file.startsWith(`${noteId}_`));
 
+    return NextResponse.json({ success: true, images });
   } catch (error) {
-    console.error('获取永久图片失败:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error instanceof Error ? error.message : '获取图片失败'
-    }, { status: 500 });
+    console.error('Permanent image list failed:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'List failed' },
+      { status: 500 }
+    );
   }
 }
 
@@ -113,16 +121,22 @@ export async function DELETE(request: NextRequest) {
   try {
     const { filename } = await request.json();
     if (!filename) {
-      return NextResponse.json({ success: false, error: '缺少图片文件名' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Missing filename' }, { status: 400 });
     }
 
-    const { error } = await supabase.storage.from(BUCKET).remove([filename]);
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    try {
+      await fs.unlink(path.join(PERMANENT_DIR, filename));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : '删除失败' }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Delete failed' },
+      { status: 500 }
+    );
   }
-} 
+}
