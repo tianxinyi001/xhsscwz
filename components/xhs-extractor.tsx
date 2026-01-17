@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -416,6 +416,7 @@ export default function XHSExtractor() {
   // 标签相关状态
   const [allTags, setAllTags] = useState<string[]>([]);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [filterRating, setFilterRating] = useState<number | null>(null);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   
   // 弹窗状态
@@ -874,9 +875,15 @@ export default function XHSExtractor() {
   };
 
   // 根据标签筛选笔记
-  const filteredNotes = filterTag 
-    ? savedNotes.filter(note => note.tags.includes(filterTag))
-    : savedNotes;
+  const filteredNotes = savedNotes.filter(note => {
+    if (filterTag && !note.tags.includes(filterTag)) {
+      return false;
+    }
+    if (filterRating !== null && (note.rating ?? 0) < filterRating) {
+      return false;
+    }
+    return true;
+  });
 
   const sortedNotes = [...filteredNotes].sort((a, b) => {
     const timeA = new Date(a.createTime || a.extractedAt).getTime();
@@ -1142,6 +1149,22 @@ export default function XHSExtractor() {
               >
                 <option value="desc">新 → 旧</option>
                 <option value="asc">旧 → 新</option>
+              </select>
+              <span className="ml-3">星级</span>
+              <select
+                value={filterRating === null ? '' : String(filterRating)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setFilterRating(value ? Number(value) : null);
+                }}
+                className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-700 bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
+              >
+                <option value="">全部</option>
+                <option value="5">5星及以上</option>
+                <option value="4">4星及以上</option>
+                <option value="3">3星及以上</option>
+                <option value="2">2星及以上</option>
+                <option value="1">1星及以上</option>
               </select>
             </div>
           </div>
