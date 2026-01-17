@@ -419,6 +419,7 @@ export default function XHSExtractor() {
   const [allTags, setAllTags] = useState<string[]>([]);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [filterRating, setFilterRating] = useState<number | null>(null);
   
   // 弹窗状态
   const [showTagModal, setShowTagModal] = useState(false);
@@ -888,9 +889,12 @@ export default function XHSExtractor() {
   };
 
   // 根据标签筛选笔记
-  const filteredNotes = filterTag 
+  const filteredNotesByTag = filterTag
     ? savedNotes.filter(note => note.tags.includes(filterTag))
     : savedNotes;
+  const filteredNotes = filterRating
+    ? filteredNotesByTag.filter(note => (note.rating ?? 0) >= filterRating)
+    : filteredNotesByTag;
 
   const sortedNotes = [...filteredNotes].sort((a, b) => {
     const timeA = new Date(a.createTime || a.extractedAt).getTime();
@@ -1137,28 +1141,62 @@ export default function XHSExtractor() {
 
         {/* 笔记收藏区域 */}
         <div>
-          <div className="mb-6">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <Tag className="h-5 w-5 text-red-500" />
-              我的收藏 ({filteredNotes.length})
+              ???? ({filteredNotes.length})
               {filterTag && (
                 <span className="text-sm font-normal text-gray-500">
-                  · {filterTag}
+                  ? {filterTag}
                 </span>
               )}
             </h2>
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span>创建日期</span>
-              <select
-                value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
-                className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-700 bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
-              >
-                <option value="desc">新 → 旧</option>
-                <option value="asc">旧 → 新</option>
-              </select>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
+              <div className="flex items-center gap-1">
+                <span>??</span>
+                <button
+                  type="button"
+                  onClick={() => setFilterRating(null)}
+                  className={`px-2 py-1 rounded-full border text-xs transition-colors ${
+                    filterRating === null
+                      ? 'bg-red-500 text-white border-red-500'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  ??
+                </button>
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFilterRating(filterRating === value ? null : value)}
+                    className={`px-2 py-1 rounded-full border text-xs transition-colors ${
+                      filterRating === value
+                        ? 'bg-yellow-400 text-white border-yellow-400'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                    title={`>= ${value}`}
+                  >
+                    <span className="inline-flex items-center gap-0.5">
+                      <Star className={`h-3 w-3 ${filterRating === value ? 'fill-white text-white' : 'text-yellow-400'}`} />
+                      {value}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span>????</span>
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
+                  className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-700 bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
+                >
+                  <option value="desc">? ? ?</option>
+                  <option value="asc">? ? ?</option>
+                </select>
+              </div>
             </div>
-          </div>
+          </div></div>
           
           {filteredNotes.length === 0 ? (
             <div className="text-center py-16">
