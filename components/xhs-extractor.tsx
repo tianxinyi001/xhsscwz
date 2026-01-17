@@ -637,9 +637,11 @@ export default function XHSExtractor() {
       
       // 收藏时直接用永久封面
       const finalCoverUrl = permanentUrl ? permanentUrl : '';
-      const extractedImages = Array.isArray(parsedData.images) ? parsedData.images : [];
-      const fallbackImages = parsedData.cover ? [parsedData.cover] : [];
-      const mergedImages = extractedImages.length > 0 ? extractedImages : fallbackImages;
+      const extractedImages: string[] = Array.isArray(parsedData.images)
+        ? parsedData.images.filter((img): img is string => typeof img === 'string')
+        : [];
+      const fallbackImages: string[] = typeof parsedData.cover === 'string' ? [parsedData.cover] : [];
+      const mergedImages: string[] = extractedImages.length > 0 ? extractedImages : fallbackImages;
       const savedImages = mergedImages.map((imageUrl, index) =>
         index === 0 && finalCoverUrl ? finalCoverUrl : imageUrl
       );
