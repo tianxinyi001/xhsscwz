@@ -1123,7 +1123,7 @@ export default function XHSExtractor() {
 
         {/* 笔记收藏区域 */}
         <div>
-          <div className="mb-6">
+          <div className="mb-6 flex items-center justify-between gap-4">
             <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <Tag className="h-5 w-5 text-red-500" />
               我的收藏 ({filteredNotes.length})
