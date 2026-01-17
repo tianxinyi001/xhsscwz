@@ -13,6 +13,7 @@ export type ExtractResult = {
   title: string;
   cover: string;
   images: string[];
+  content: string;
   noteId?: string | null;
 };
 
@@ -162,6 +163,23 @@ export function uniqueImagesByKey(list: ExtractedImage[], keyFn: (value: string)
   return results;
 }
 
+function uniqueUrlsByKey(list: string[], keyFn: (value: string) => string): string[] {
+  const seen = new Set();
+  const results: string[] = [];
+  for (const url of list) {
+    const key = keyFn(url);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    results.push(url);
+    if (results.length >= MAX_IMAGES) {
+      break;
+    }
+  }
+  return results;
+}
+
 function parseNextDataFromHtml(html: string): ExtractedImage[] {
   const scriptMatch = html.match(/<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
   if (!scriptMatch) {
@@ -170,7 +188,7 @@ function parseNextDataFromHtml(html: string): ExtractedImage[] {
   try {
     const data = JSON.parse(scriptMatch[1]);
     const results: ExtractedImage[] = [];
-    collectUrlsFromObject(data, results, 'next-data', { allowLoose: false });
+    collectUrlsFromObject(data, results, 'next-data', { allowLoose: true });
     return results;
   } catch {
     return [];
@@ -185,7 +203,7 @@ function parseInlineStateFromHtml(html: string): ExtractedImage[] {
   try {
     const data = JSON.parse(stateMatch[1]);
     const results: ExtractedImage[] = [];
-    collectUrlsFromObject(data, results, 'inline-state', { allowLoose: false });
+    collectUrlsFromObject(data, results, 'inline-state', { allowLoose: true });
     return results;
   } catch {
     return [];
@@ -208,6 +226,14 @@ function parseSrcSet(value: string): string | null {
   }
   const last = parts[parts.length - 1];
   return last.split(' ')[0] || null;
+}
+
+function extractImageUrlsFromHtmlText(html: string): string[] {
+  const matches = html.match(/https?:\/\/[^"'\\s>]+/g) || [];
+  return matches
+    .filter((url) => ALLOWED_HOST.test(url))
+    .filter((url) => !NOISE_HINT.test(url))
+    .slice(0, MAX_IMAGES);
 }
 
 function parseImgTagsFromHtml(html: string): ExtractedImage[] {
@@ -274,6 +300,19 @@ function extractTitleFromHtml(html: string): string {
   return titleMatch ? decodeHtmlEntities(titleMatch[1].trim()) : '';
 }
 
+function extractDescriptionFromHtml(html: string): string {
+  const ogDescription = extractMetaContent(html, 'og:description');
+  if (ogDescription) return decodeHtmlEntities(ogDescription);
+
+  const description = extractMetaContent(html, 'description');
+  if (description) return decodeHtmlEntities(description);
+
+  const twitterDescription = extractMetaContent(html, 'twitter:description');
+  if (twitterDescription) return decodeHtmlEntities(twitterDescription);
+
+  return '';
+}
+
 function extractCoverFromHtml(html: string, fallbackImages: string[]): string {
   const ogImage = extractMetaContent(html, 'og:image');
   if (ogImage) return ogImage;
@@ -292,6 +331,115 @@ function decodeHtmlEntities(value: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>');
+}
+
+function tryUnescapeJsonString(value: string): string {
+  try {
+    return JSON.parse(`"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
+  } catch {
+    return value;
+  }
+}
+
+const TEXT_KEYS = new Set([
+  'desc',
+  'description',
+  'content',
+  'note',
+  'noteText',
+  'note_text',
+  'text',
+  'summary'
+]);
+
+function collectTextFromObject(
+  data: unknown,
+  results: string[],
+  depth = 0,
+  maxDepth = 6
+): void {
+  if (depth > maxDepth || data === null || data === undefined) {
+    return;
+  }
+  if (typeof data === 'string') {
+    return;
+  }
+  if (Array.isArray(data)) {
+    data.forEach((item) => collectTextFromObject(item, results, depth + 1, maxDepth));
+    return;
+  }
+  if (typeof data === 'object') {
+    Object.entries(data as Record<string, unknown>).forEach(([key, value]) => {
+      if (TEXT_KEYS.has(key) && typeof value === 'string') {
+        results.push(value);
+      }
+      collectTextFromObject(value, results, depth + 1, maxDepth);
+    });
+  }
+}
+
+function pickBestContent(candidates: string[]): string {
+  const normalize = (text: string) => text.replace(/\s+/g, '');
+  const boilerplate = new Set([
+    normalize('3亿人的生活经验都在小红书'),
+    normalize('3 亿人的生活经验都在小红书'),
+    normalize('3 亿人的生活经验，都在小红书'),
+    normalize('小红书'),
+    normalize('发现精彩生活')
+  ]);
+
+  const cleaned = candidates
+    .map((item) => decodeHtmlEntities(String(item)).trim())
+    .filter((item) => item.length > 0 && !/^https?:\/\//i.test(item))
+    .filter((item) => !boilerplate.has(normalize(item)));
+
+  if (cleaned.length === 0) return '';
+
+  return cleaned.sort((a, b) => b.length - a.length)[0];
+}
+
+function extractContentFromHtml(html: string): string {
+  const candidates: string[] = [];
+  const regexes = [
+    /"desc"\s*:\s*"([^"]+)"/g,
+    /"description"\s*:\s*"([^"]+)"/g,
+    /"content"\s*:\s*"([^"]+)"/g,
+    /"noteText"\s*:\s*"([^"]+)"/g,
+    /"note_text"\s*:\s*"([^"]+)"/g
+  ];
+
+  regexes.forEach((regex) => {
+    let match: RegExpExecArray | null = null;
+    while ((match = regex.exec(html))) {
+      const raw = match[1];
+      if (!raw) continue;
+      candidates.push(tryUnescapeJsonString(raw));
+    }
+  });
+
+  return pickBestContent(candidates);
+}
+
+function extractContentFromJson(html: string): string {
+  const candidates: string[] = [];
+
+  const nextMatch = html.match(/<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (nextMatch) {
+    try {
+      const data = JSON.parse(nextMatch[1]);
+      collectTextFromObject(data, candidates);
+    } catch {}
+  }
+
+  const stateMatch = html.match(/__INITIAL_STATE__\s*=\s*(\{[\s\S]+?\})\s*;?/);
+  if (stateMatch) {
+    try {
+      const data = JSON.parse(stateMatch[1]);
+      collectTextFromObject(data, candidates);
+    } catch {}
+  }
+
+  return pickBestContent(candidates);
 }
 
 export function normalizeImageUrl(input: string): string {
@@ -344,13 +492,20 @@ export function collectAllImagesFromHtml(html: string): ExtractedImage[] {
 }
 
 export function extractXhsFromHtml(html: string, url: string): ExtractResult {
-  const images = collectAllImagesFromHtml(html).map((item) => item.url);
+  const domImages = collectAllImagesFromHtml(html).map((item) => item.url);
+  const regexImages = extractImageUrlsFromHtmlText(html);
+  const images = uniqueUrlsByKey([...domImages, ...regexImages], normalizeImageKey);
   const title = extractTitleFromHtml(html);
   const cover = extractCoverFromHtml(html, images);
+  const contentFromJson = extractContentFromJson(html);
+  const contentFromHtml = extractContentFromHtml(html);
+  const contentFromMeta = extractDescriptionFromHtml(html);
+  const content = contentFromJson || contentFromHtml || contentFromMeta;
   return {
     title,
     cover,
     images,
+    content,
     noteId: getNoteIdFromUrl(url)
   };
 }

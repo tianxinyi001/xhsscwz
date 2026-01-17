@@ -9,6 +9,7 @@ import { generateId, isValidXHSUrl, extractXHSUrl, formatDate } from '@/lib/util
 import { ImageCacheManager } from '@/lib/image-cache';
 import { Trash2, ExternalLink, Plus, Tag, X, Star } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface ApiResponse {
   success: boolean;
@@ -407,6 +408,7 @@ function DeleteConfirmModal({
 }
 
 export default function XHSExtractor() {
+  const router = useRouter();
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState(''); // 新增：加载阶段状态
@@ -589,7 +591,7 @@ export default function XHSExtractor() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url: extractedUrl, quickPreview: true }),
+        body: JSON.stringify({ url: extractedUrl }),
       });
 
       setLoadingStage('正在处理数据...');
@@ -635,13 +637,19 @@ export default function XHSExtractor() {
       
       // 收藏时直接用永久封面
       const finalCoverUrl = permanentUrl ? permanentUrl : '';
+      const extractedImages = Array.isArray(parsedData.images) ? parsedData.images : [];
+      const fallbackImages = parsedData.cover ? [parsedData.cover] : [];
+      const mergedImages = extractedImages.length > 0 ? extractedImages : fallbackImages;
+      const savedImages = mergedImages.map((imageUrl, index) =>
+        index === 0 && finalCoverUrl ? finalCoverUrl : imageUrl
+      );
       
       // 构造简化的笔记对象
       const collectedAt = new Date().toISOString();
       const simpleNote: SimpleNote = {
         id: noteId,
         title: parsedData.title || '未提取到标题',
-        cover: finalCoverUrl,
+        cover: savedImages[0] || finalCoverUrl,
         url: finalUrl, // 使用提取的正确URL
         tags: selectedTags,
         createTime: collectedAt,
@@ -657,12 +665,10 @@ export default function XHSExtractor() {
       const fullNote: StoredNote = {
         id: simpleNote.id,
         title: simpleNote.title,
-        content: '',
+        content: parsedData.content || '',
         author: { name: '' },
-        images: finalCoverUrl ? [finalCoverUrl] : [],
-        originalImages: parsedData.cover && parsedData.cover !== '无封面' && !parsedData.cover.startsWith('/api/image-proxy')
-          ? [parsedData.cover] // 保存原始URL
-          : undefined,
+        images: savedImages,
+        originalImages: mergedImages.length > 0 ? mergedImages : undefined,
         permanentImages: permanentUrl ? [permanentUrl] : undefined,
         tags: simpleNote.tags,
         url: simpleNote.url, // 使用提取的正确URL
@@ -871,6 +877,10 @@ export default function XHSExtractor() {
       console.error('无效的URL:', noteUrl);
       console.error('URL验证失败的原因: URL为空或不以http/https开头');
     }
+  };
+
+  const openNoteDetail = (noteId: string) => {
+    router.push(`/note/${noteId}`);
   };
 
   // 根据标签筛选笔记
@@ -1170,7 +1180,7 @@ export default function XHSExtractor() {
                       src={note.cover}
                       alt={note.title}
                       className="w-full h-full object-cover cursor-pointer"
-                      onClick={() => openNote(note.url)}
+                      onClick={() => openNoteDetail(note.id)}
                       loading="lazy"
                     />
                     {/* 操作按钮浮层 */}
@@ -1197,9 +1207,13 @@ export default function XHSExtractor() {
                   </div>
                   {/* 标题和标签区域 */}
                   <div className="p-3">
-                    <div className="text-gray-900 text-sm font-medium line-clamp-2 mb-2">
+                    <button
+                      type="button"
+                      className="text-left text-gray-900 text-sm font-medium line-clamp-2 mb-2 w-full"
+                      onClick={() => openNoteDetail(note.id)}
+                    >
                       {note.title}
-                    </div>
+                    </button>
                     <div className="flex flex-wrap items-center gap-1.5">
                       {note.tags.map((tag) => (
                         <span

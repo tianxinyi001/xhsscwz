@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
         data: {
           title: cleanText(parsed.title || 'Untitled'),
           cover,
+          content: cleanText(parsed.content || ''),
           noteId: parsed.noteId,
           url
         },
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
       data: {
         title: cleanText(parsed.title || 'Untitled'),
         author: '',
-        content: '',
+        content: cleanText(parsed.content || ''),
         cover,
         images,
         tags: [],
