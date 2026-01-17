@@ -417,6 +417,7 @@ export default function XHSExtractor() {
   const [allTags, setAllTags] = useState<string[]>([]);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [ratingFilter, setRatingFilter] = useState<'all' | number>('all');
   
   // 弹窗状态
   const [showTagModal, setShowTagModal] = useState(false);
@@ -878,7 +879,12 @@ export default function XHSExtractor() {
     ? savedNotes.filter(note => note.tags.includes(filterTag))
     : savedNotes;
 
-  const sortedNotes = [...filteredNotes].sort((a, b) => {
+  const ratingFilteredNotes =
+    ratingFilter === 'all'
+      ? filteredNotes
+      : filteredNotes.filter((note) => (note.rating ?? 0) === ratingFilter);
+
+  const sortedNotes = [...ratingFilteredNotes].sort((a, b) => {
     const timeA = new Date(a.createTime || a.extractedAt).getTime();
     const timeB = new Date(b.createTime || b.extractedAt).getTime();
     return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
