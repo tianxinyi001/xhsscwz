@@ -1196,7 +1196,7 @@ export default function XHSExtractor() {
                 </select>
               </div>
             </div>
-          </div></div>
+          </div>
           
           {filteredNotes.length === 0 ? (
             <div className="text-center py-16">
