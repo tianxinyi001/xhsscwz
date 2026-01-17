@@ -418,7 +418,6 @@ export default function XHSExtractor() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [filterRating, setFilterRating] = useState<number | null>(null);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
-  const [isRandomOrder, setIsRandomOrder] = useState(false);
   const [randomNotes, setRandomNotes] = useState<SimpleNote[]>([]);
   
   // 弹窗状态
@@ -903,12 +902,10 @@ export default function XHSExtractor() {
   };
 
   useEffect(() => {
-    if (isRandomOrder) {
-      setRandomNotes(shuffleNotes(filteredNotes));
-    }
-  }, [isRandomOrder, filteredNotes]);
+    setRandomNotes([]);
+  }, [filterTag, filterRating, sortOrder]);
 
-  const displayNotes = isRandomOrder ? randomNotes : sortedNotes;
+  const displayNotes = randomNotes.length > 0 ? randomNotes : sortedNotes;
 
   // 处理图片URL，使用代理来绕过防盗链
   const getProxyImageUrl = (originalUrl: string): string => {
@@ -1162,13 +1159,9 @@ export default function XHSExtractor() {
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <button
                 type="button"
-                onClick={() => setIsRandomOrder((prev) => !prev)}
-                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 border text-sm transition-colors ${
-                  isRandomOrder
-                    ? 'bg-red-50 text-red-600 border-red-200'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                }`}
-                title="随机排布笔记"
+                onClick={() => setRandomNotes(shuffleNotes(filteredNotes))}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 border text-sm transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                title="随机排布笔记（点击一次随机一次）"
               >
                 <Shuffle className="h-3.5 w-3.5" />
                 随机排布
