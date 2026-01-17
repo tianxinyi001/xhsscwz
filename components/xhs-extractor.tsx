@@ -7,7 +7,7 @@ import { StorageManager } from '@/lib/storage';
 import { StoredNote } from '@/lib/types';
 import { generateId, isValidXHSUrl, extractXHSUrl, formatDate } from '@/lib/utils';
 import { ImageCacheManager } from '@/lib/image-cache';
-import { Trash2, ExternalLink, Plus, Tag, X, Star } from 'lucide-react';
+import { Trash2, ExternalLink, Plus, Tag, X, Star, Shuffle } from 'lucide-react';
 import Link from 'next/link';
 
 interface ApiResponse {
@@ -418,6 +418,8 @@ export default function XHSExtractor() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [filterRating, setFilterRating] = useState<number | null>(null);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [isRandomOrder, setIsRandomOrder] = useState(false);
+  const [randomNotes, setRandomNotes] = useState<SimpleNote[]>([]);
   
   // 弹窗状态
   const [showTagModal, setShowTagModal] = useState(false);
@@ -891,6 +893,23 @@ export default function XHSExtractor() {
     return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
   });
 
+  const shuffleNotes = (notes: SimpleNote[]) => {
+    const result = [...notes];
+    for (let i = result.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  };
+
+  useEffect(() => {
+    if (isRandomOrder) {
+      setRandomNotes(shuffleNotes(filteredNotes));
+    }
+  }, [isRandomOrder, filteredNotes]);
+
+  const displayNotes = isRandomOrder ? randomNotes : sortedNotes;
+
   // 处理图片URL，使用代理来绕过防盗链
   const getProxyImageUrl = (originalUrl: string): string => {
     if (!originalUrl || originalUrl === '无封面') {
@@ -1141,6 +1160,19 @@ export default function XHSExtractor() {
               )}
             </h2>
             <div className="flex items-center gap-2 text-sm text-gray-500">
+              <button
+                type="button"
+                onClick={() => setIsRandomOrder((prev) => !prev)}
+                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 border text-sm transition-colors ${
+                  isRandomOrder
+                    ? 'bg-red-50 text-red-600 border-red-200'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                }`}
+                title="随机排布笔记"
+              >
+                <Shuffle className="h-3.5 w-3.5" />
+                随机排布
+              </button>
               <span>创建日期</span>
               <select
                 value={sortOrder}
@@ -1160,12 +1192,12 @@ export default function XHSExtractor() {
                 className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-700 bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
               >
                 <option value="">全部</option>
-                <option value="0">未评分</option>
                 <option value="5">5星</option>
                 <option value="4">4星</option>
                 <option value="3">3星</option>
                 <option value="2">2星</option>
                 <option value="1">1星</option>
+                <option value="0">未评分</option>
               </select>
             </div>
           </div>
@@ -1184,7 +1216,7 @@ export default function XHSExtractor() {
             </div>
           ) : (
             <div className="notes-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {sortedNotes.map((note) => (
+              {displayNotes.map((note) => (
                 <div
                   key={note.id}
                   className="bg-white rounded-2xl shadow-sm overflow-hidden group hover:shadow-md transition-shadow"
