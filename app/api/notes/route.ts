@@ -18,6 +18,7 @@ function storedNoteToDatabase(note: StoredNote): Omit<DatabaseNote, 'created_at'
     url: note.url,
     create_time: note.createTime,
     extracted_at: note.extractedAt,
+    rating: note.rating ?? 0,
   };
 }
 
@@ -37,6 +38,7 @@ function databaseToStoredNote(dbNote: DatabaseNote): StoredNote {
     url: dbNote.url,
     createTime: dbNote.create_time,
     extractedAt: dbNote.extracted_at,
+    rating: dbNote.rating ?? 0,
   };
 }
 

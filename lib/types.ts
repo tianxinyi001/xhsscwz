@@ -46,6 +46,7 @@ export interface XHSNote {
   url?: string;
   createTime: string;
   extractedAt: string;
+  rating?: number;
 }
 
 // 本地存储类型

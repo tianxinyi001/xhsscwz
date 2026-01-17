@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
         url TEXT DEFAULT NULL,
         create_time TEXT NOT NULL,
         extracted_at TEXT NOT NULL,
+        rating INTEGER DEFAULT 0,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
@@ -126,6 +127,7 @@ CREATE TABLE IF NOT EXISTS notes (
   url TEXT DEFAULT NULL,
   create_time TEXT NOT NULL,
   extracted_at TEXT NOT NULL,
+  rating INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

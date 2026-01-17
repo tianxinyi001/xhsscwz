@@ -5,9 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { StorageManager } from '@/lib/storage';
 import { StoredNote } from '@/lib/types';
-import { generateId, isValidXHSUrl, extractXHSUrl } from '@/lib/utils';
+import { generateId, isValidXHSUrl, extractXHSUrl, formatDate } from '@/lib/utils';
 import { ImageCacheManager } from '@/lib/image-cache';
-import { Trash2, ExternalLink, Plus, Tag, X } from 'lucide-react';
+import { Trash2, ExternalLink, Plus, Tag, X, Star } from 'lucide-react';
 import Link from 'next/link';
 
 interface ApiResponse {
@@ -23,7 +23,9 @@ interface SimpleNote {
   cover: string;
   url: string;
   tags: string[];
+  createTime: string;
   extractedAt: string;
+  rating?: number;
 }
 
 // 标签选择弹窗组件
@@ -414,6 +416,7 @@ export default function XHSExtractor() {
   // 标签相关状态
   const [allTags, setAllTags] = useState<string[]>([]);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   
   // 弹窗状态
   const [showTagModal, setShowTagModal] = useState(false);
@@ -449,7 +452,9 @@ export default function XHSExtractor() {
       cover: note.images[0] || '',
       url: note.url || '',
       tags: note.tags || [],
-      extractedAt: note.extractedAt
+      createTime: note.createTime,
+      extractedAt: note.extractedAt,
+      rating: note.rating ?? 0
     }));
         
         setSavedNotes(simpleNotes);
@@ -632,13 +637,16 @@ export default function XHSExtractor() {
       const finalCoverUrl = permanentUrl ? permanentUrl : '';
       
       // 构造简化的笔记对象
+      const collectedAt = new Date().toISOString();
       const simpleNote: SimpleNote = {
         id: noteId,
         title: parsedData.title || '未提取到标题',
         cover: finalCoverUrl,
         url: finalUrl, // 使用提取的正确URL
         tags: selectedTags,
-        extractedAt: new Date().toISOString()
+        createTime: collectedAt,
+        extractedAt: collectedAt,
+        rating: 0
       };
       
       console.log('保存的笔记对象:', simpleNote);
@@ -659,7 +667,8 @@ export default function XHSExtractor() {
         tags: simpleNote.tags,
         url: simpleNote.url, // 使用提取的正确URL
         createTime: simpleNote.extractedAt,
-        extractedAt: simpleNote.extractedAt
+        extractedAt: simpleNote.extractedAt,
+        rating: simpleNote.rating
       };
 
       await StorageManager.saveNote(fullNote);
@@ -674,7 +683,9 @@ export default function XHSExtractor() {
         cover: note.images[0] || '',
         url: note.url || '',
         tags: note.tags || [],
-        extractedAt: note.extractedAt
+        createTime: note.createTime,
+        extractedAt: note.extractedAt,
+        rating: note.rating ?? 0
       }));
       setSavedNotes(simpleNotes);
       setUrl('');
@@ -827,6 +838,25 @@ export default function XHSExtractor() {
     setAllTags(updatedAllTags);
   };
 
+  const handleRateNote = async (noteId: string, rating: number) => {
+    setSavedNotes(prev => prev.map(note => 
+      note.id === noteId 
+        ? { ...note, rating }
+        : note
+    ));
+
+    try {
+      const existingNote = await StorageManager.getNoteById(noteId);
+      if (existingNote) {
+        const updatedNote = { ...existingNote, rating };
+        await StorageManager.saveNote(updatedNote);
+      }
+    } catch (error) {
+      console.error('更新星标评级失败:', error);
+      setError('更新星标评级失败，请稍后重试');
+    }
+  };
+
   const openNote = (noteUrl: string) => {
     console.log('点击卡片，准备打开URL:', noteUrl);
     console.log('URL类型:', typeof noteUrl);
@@ -847,6 +877,12 @@ export default function XHSExtractor() {
   const filteredNotes = filterTag 
     ? savedNotes.filter(note => note.tags.includes(filterTag))
     : savedNotes;
+
+  const sortedNotes = [...filteredNotes].sort((a, b) => {
+    const timeA = new Date(a.createTime || a.extractedAt).getTime();
+    const timeB = new Date(b.createTime || b.extractedAt).getTime();
+    return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+  });
 
   // 处理图片URL，使用代理来绕过防盗链
   const getProxyImageUrl = (originalUrl: string): string => {
@@ -1056,7 +1092,7 @@ export default function XHSExtractor() {
 
         {/* 标签导航栏 - 类似小红书主页 */}
         {allTags.length > 0 && (
-          <div className="mb-6">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2 overflow-x-auto">
               <button
                 onClick={() => setFilterTag(null)}
@@ -1097,6 +1133,17 @@ export default function XHSExtractor() {
                 </span>
               )}
             </h2>
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <span>创建日期</span>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
+                className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-700 bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
+              >
+                <option value="desc">新 → 旧</option>
+                <option value="asc">旧 → 新</option>
+              </select>
+            </div>
           </div>
           
           {filteredNotes.length === 0 ? (
@@ -1113,7 +1160,7 @@ export default function XHSExtractor() {
             </div>
           ) : (
             <div className="notes-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {filteredNotes.map((note) => (
+              {sortedNotes.map((note) => (
                 <div
                   key={note.id}
                   className="bg-white rounded-2xl shadow-sm overflow-hidden group hover:shadow-md transition-shadow"
@@ -1172,6 +1219,31 @@ export default function XHSExtractor() {
                         <Tag className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+                    <div className="mt-2 flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRateNote(note.id, value);
+                          }}
+                          className="p-0.5"
+                          title={`星标评级：${value}`}
+                        >
+                          <Star
+                            className={`h-4 w-4 ${
+                              (note.rating ?? 0) >= value
+                                ? 'text-yellow-400 fill-yellow-400'
+                                : 'text-gray-300'
+                            }`}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-gray-400">
+                      收集时间：{formatDate(note.extractedAt)}
+                    </p>
                   </div>
                 </div>
               ))}

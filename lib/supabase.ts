@@ -24,6 +24,7 @@ export interface DatabaseNote {
   url?: string;
   create_time: string;
   extracted_at: string;
+  rating?: number;
   created_at?: string;
   updated_at?: string;
 }
