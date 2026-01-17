@@ -65,6 +65,7 @@ export interface StoredNote {
   url?: string;
   createTime: string;
   extractedAt: string;
+  rating?: number;
 }
 
 // 应用状态类型
