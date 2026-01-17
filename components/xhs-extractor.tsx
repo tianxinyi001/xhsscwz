@@ -879,7 +879,7 @@ export default function XHSExtractor() {
     if (filterTag && !note.tags.includes(filterTag)) {
       return false;
     }
-    if (filterRating !== null && (note.rating ?? 0) < filterRating) {
+    if (filterRating !== null && (note.rating ?? 0) !== filterRating) {
       return false;
     }
     return true;
@@ -1160,11 +1160,12 @@ export default function XHSExtractor() {
                 className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-700 bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
               >
                 <option value="">全部</option>
-                <option value="5">5星及以上</option>
-                <option value="4">4星及以上</option>
-                <option value="3">3星及以上</option>
-                <option value="2">2星及以上</option>
-                <option value="1">1星及以上</option>
+                <option value="0">未评分</option>
+                <option value="5">5星</option>
+                <option value="4">4星</option>
+                <option value="3">3星</option>
+                <option value="2">2星</option>
+                <option value="1">1星</option>
               </select>
             </div>
           </div>
